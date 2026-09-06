@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
+  "applicationId": "com.commandpocket.note",
+  "version": "0.2.0",
+  "defaultMode": "window",
+  "port": 0,
+  "documentRoot": "/web-dist/",
+  "url": "/",
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "tokenSecurity": "one-time",
+  "logging": {
+    "enabled": false,
+    "writeToLogFile": false
+  },
+  "nativeAllowList": [
+    "app.*",
+    "window.*",
+    "clipboard.*",
+    "events.*",
+    "storage.*",
+    "os.*"
+  ],
+  "modes": {
+    "window": {
+      "title": "Command Pocket",
+      "width": 1180,
+      "height": 760,
+      "minWidth": 820,
+      "minHeight": 560,
+      "center": true,
+      "alwaysOnTop": false,
+      "fullScreen": false,
+      "borderless": false,
+      "maximize": false,
+      "hidden": false,
+      "resizable": true,
+      "enableInspector": false,
+      "exitProcessOnClose": true
+    }
+  },
+  "cli": {
+    "binaryName": "CommandPocket",
+    "resourcesPath": "/web-dist/",
+    "extensionsPath": "/extensions/",
+    "clientLibrary": "/src/neutralino.js",
+    "binaryVersion": "5.6.0"
+  }
+}

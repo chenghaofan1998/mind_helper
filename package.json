@@ -1,0 +1,28 @@
+{
+  "name": "command-pocket-mvp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1",
+    "desktop:web": "npm run build && neu run",
+    "desktop:package": "npm run desktop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-native-release.ps1",
+    "desktop:web-package": "npm run build && neu build --release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-release.ps1",
+    "neutralino:update": "neu update"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@neutralinojs/lib": "^6.8.0",
+    "@neutralinojs/neu": "^11.7.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  },
+  "overrides": {
+    "@neutralinojs/neu": {
+      "uuid": "8.3.2"
+    }
+  }
+}
