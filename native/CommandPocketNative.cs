@@ -763,6 +763,17 @@ namespace CommandPocketNative
             CommandCard card = SelectedCard();
             if (card == null)
                 return;
+            if (card.Risk == "high" || card.Risk == "critical")
+            {
+                DialogResult confirm = MessageBox.Show(this,
+                    "这是一条高风险内容，粘贴/执行前请再确认一次：\r\n\r\n" + card.Body +
+                    "\r\n\r\n是否仍要复制？",
+                    "Command Pocket · 风险确认",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                if (confirm != DialogResult.Yes)
+                    return;
+            }
             Clipboard.SetText(card.Body);
             card.CopyCount++;
             card.LastUsedAt = DateTime.Now;
@@ -1946,6 +1957,11 @@ namespace CommandPocketNative
         public string Tags;           // 逗号分隔
         public string Source;         // 来源 URL / 文件 / 粘贴
         public string Risk;           // low|medium|high|critical
+        public string Purpose;        // 目的句（“我刚用它干什么”的原话，检索钥匙）
+        public string RiskScope;      // 风险明细·动什么：本机/项目/全局/文件
+        public string RiskMutation;   // 风险明细·改删什么：覆盖/删除/不可逆/无
+        public string RiskRevert;     // 风险明细·能否还原：yes/no/unknown
+        public bool RiskLabeled;      // 是否人工标注过风险(false=未标注→展示按黄)
         public bool IsFavorite;
         public int Heat;              // 主流热度 seed 0..5（预置，不随用户数据变）
         public int CopyCount;         // 个人复制次数（个人频率信号）
@@ -1971,6 +1987,11 @@ namespace CommandPocketNative
                 Tags = JoinTokens(tagTokens, CommandClassifier.Domain(body)),
                 Source = source,
                 Risk = "low",
+                Purpose = "",
+                RiskScope = "",
+                RiskMutation = "",
+                RiskRevert = "unknown",
+                RiskLabeled = false,
                 IsFavorite = false,
                 Heat = 0,
                 CopyCount = 0,
@@ -1995,6 +2016,11 @@ namespace CommandPocketNative
                 Tags = kind,
                 Source = source,
                 Risk = kind == KindWarning ? "medium" : "low",
+                Purpose = "",
+                RiskScope = "",
+                RiskMutation = "",
+                RiskRevert = "unknown",
+                RiskLabeled = false,
                 IsFavorite = false,
                 Heat = 0,
                 CopyCount = 0,
@@ -3218,7 +3244,12 @@ namespace CommandPocketNative
             Field(sb, "tags", c.Tags);
             Field(sb, "source", c.Source);
             Field(sb, "risk", c.Risk);
+            Field(sb, "purpose", c.Purpose);
+            Field(sb, "rs", c.RiskScope);
+            Field(sb, "rm", c.RiskMutation);
+            Field(sb, "rr", c.RiskRevert);
             sb.Append("\"fav\":").Append(c.IsFavorite ? "true" : "false").Append(',');
+            sb.Append("\"rlabeled\":").Append(c.RiskLabeled ? "true" : "false").Append(',');
             sb.Append("\"heat\":").Append(c.Heat).Append(',');
             sb.Append("\"copies\":").Append(c.CopyCount).Append(',');
             Field(sb, "used", c.LastUsedAt.ToString(TimeFormat, System.Globalization.CultureInfo.InvariantCulture));
@@ -3294,6 +3325,15 @@ namespace CommandPocketNative
                     else if (key == "tags") c.Tags = value;
                     else if (key == "source") c.Source = value;
                     else if (key == "risk") c.Risk = value;
+                    else if (key == "purpose") c.Purpose = value;
+                    else if (key == "rs") c.RiskScope = value;
+                    else if (key == "rm") c.RiskMutation = value;
+                    else if (key == "rr") c.RiskRevert = value;
+                    else if (key == "rlabeled")
+                    {
+                        c.RiskLabeled = StartsWith(line, pos, "true");
+                        pos += c.RiskLabeled ? 4 : 5;
+                    }
                     else if (key == "fav")
                     {
                         c.IsFavorite = StartsWith(line, pos, "true");
@@ -3313,6 +3353,10 @@ namespace CommandPocketNative
                 if (c.Product == null) c.Product = "Personal";
                 if (c.Kind == null) c.Kind = CommandCard.KindCommand;
                 if (c.Risk == null) c.Risk = "low";
+                if (c.Purpose == null) c.Purpose = "";
+                if (c.RiskScope == null) c.RiskScope = "";
+                if (c.RiskMutation == null) c.RiskMutation = "";
+                if (c.RiskRevert == null || c.RiskRevert == "") c.RiskRevert = "unknown";
                 if (c.LastUsedAt == DateTime.MinValue) c.LastUsedAt = c.UpdatedAt;
                 if (c.CreatedAt == DateTime.MinValue) c.CreatedAt = DateTime.Now;
                 if (c.UpdatedAt == DateTime.MinValue) c.UpdatedAt = DateTime.Now;
