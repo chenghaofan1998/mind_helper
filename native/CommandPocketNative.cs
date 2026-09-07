@@ -2556,6 +2556,10 @@ namespace CommandPocketNative
                     if (Normalize(aliases[j]) == term || aliases[j] == term)
                         score += 15;
                 }
+                if (Normalize(card.Purpose).Contains(term))
+                    score += 14; // 目的句(原话)命中：权重 ≥ 标题
+                if (Normalize(card.Title).Contains(term))
+                    score += 12; // 标题单独命中
             }
             for (int i = 0; i < TermMap.Length; i++)
             {
@@ -2581,7 +2585,7 @@ namespace CommandPocketNative
 
         private static string SearchPool(CommandCard card)
         {
-            return Normalize(card.Title + " " + card.Aliases + " " + card.Body + " " + card.Desc + " " + card.Tags + " " + card.Product + " " + card.Source);
+            return Normalize(card.Title + " " + card.Aliases + " " + card.Body + " " + card.Desc + " " + card.Tags + " " + card.Product + " " + card.Source + " " + card.Purpose);
         }
 
         private static bool ContainsAny(string text, string[] tokens)
