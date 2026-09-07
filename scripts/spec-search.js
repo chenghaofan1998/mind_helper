@@ -7,11 +7,17 @@ const TermMap = [
   ['压缩', '打包', '解压', 'tar', 'zip', 'gzip'],
   ['端口', '占用', 'lsof', 'netstat'],
   ['撤销', '回退', '回滚', 'reset', 'revert'],
+  ['清理', 'prune', 'clean'],
   ['查找', '搜索', 'find', 'grep', 'rg'],
   ['删除', '移除', 'rm', 'delete', 'del'],
+  ['复制', '拷贝', 'cp', 'copy'],
+  ['移动', '重命名', 'mv', 'rename'],
   ['权限', 'chmod', 'chown'],
   ['进程', 'ps', 'kill', 'top', 'htop'],
   ['网络', 'curl', 'wget', 'ping', 'ssh'],
+  ['创建目录', 'mkdir'],
+  ['日志', 'tail', 'log'],
+  ['提交', 'commit'],
   ['推送', '拉取', 'push', 'pull', 'fetch'],
 ];
 
@@ -22,7 +28,7 @@ function card(o) {
   return Object.assign({
     product: 'Linux', title: '', aliases: '', body: '', desc: '', tags: '', source: '',
     purpose: '', risk: 'low', kind: 'command', fav: false, heat: 0, copies: 0,
-    used: new Date('2026-08-01'), updated: new Date('2026-08-01'), createdAt: new Date('2025-01-01')
+    used: new Date('2026-08-01'), updated: new Date('2026-08-01')
   }, o);
 }
 
@@ -90,6 +96,8 @@ const lib = [
   card({ title: 'tar 打包', aliases: 'tar,压缩,打包', body: 'tar -czf x.tar.gz mydir', purpose: '把文件夹打包成压缩包发给别人', copies: 12, used: new Date('2026-09-05'), updated: new Date('2026-09-05') }),
   card({ title: 'git push 失败重推', aliases: 'git,push,force', body: 'git push --force-with-lease origin main', risk: 'high', purpose: '推送被拒后强制推上去', copies: 2, used: new Date('2026-08-30'), updated: new Date('2026-08-30') }),
   card({ title: '查磁盘占用', aliases: 'df,磁盘,du', body: 'df -h', purpose: '看磁盘满了没有', copies: 1, used: new Date('2026-07-01'), updated: new Date('2026-07-01') }),
+  card({ title: 'cp 复制文件', aliases: 'cp,复制,拷贝', body: 'cp a.txt b.txt', purpose: '复制一份文件', copies: 0, used: new Date('2026-09-06'), updated: new Date('2026-09-06') }),
+  card({ title: 'tail 看日志', aliases: 'tail,日志,log', body: 'tail -f app.log', purpose: '实时看程序日志', copies: 0, used: new Date('2026-09-06'), updated: new Date('2026-09-06') }),
 ];
 
 // ---------- 用例 ----------
@@ -111,13 +119,15 @@ expect('T2b 碎片"占着"排在标题无关卡前', search(lib, '占着', '全�
 // T3 别名命中不退化（回归 C3）
 expect('T3 别名 lsof 命中', search(lib, 'lsof', '全部', 3)[0] === 'lsof 看占用进程', JSON.stringify(search(lib, 'lsof', '全部', 3)));
 expect('T3b 中文"端口"命中（组/别名）', search(lib, '端口', '全部', 3)[0] === 'netstat 查端口', JSON.stringify(search(lib, '端口', '全部', 3)));
+expect('T3c 中文"复制"命中 cp 卡', search(lib, '复制', '全部', 3)[0] === 'cp 复制文件', JSON.stringify(search(lib, '复制', '全部', 3)));
+expect('T3d 中文"日志"命中 tail 卡', search(lib, '日志', '全部', 3)[0] === 'tail 看日志', JSON.stringify(search(lib, '日志', '全部', 3)));
 
 // T4 目的句与标题命中比较：目的句权重 ≥ 标题
 const clash = lib.slice(0, 1).concat(card({ title: '查看被占用的端口', aliases: '', body: 'echo x', purpose: '', copies: 1 }));
 expect('T4 目的句命中卡排在纯标题命中卡前',
   search(clash, '占着', '全部', 3)[0] === 'netstat 查端口', JSON.stringify(search(clash, '占着', '全部', 3)));
 
-// T5 中文一句话（术语组兜底）：压缩文件夹 → tar 类命中
+// T5 中文一句话（术语组兜底）：把文件夹打包发人 → tar 类命中
 expect('T5 一句话"把文件夹打包发人"命中 tar 卡',
   search(lib, '把文件夹打包发人', '全部', 3)[0] === 'tar 打包', JSON.stringify(search(lib, '把文件夹打包发人', '全部', 3)));
 

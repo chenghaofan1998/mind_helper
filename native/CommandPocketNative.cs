@@ -763,17 +763,8 @@ namespace CommandPocketNative
             CommandCard card = SelectedCard();
             if (card == null)
                 return;
-            if (card.Risk == "high" || card.Risk == "critical")
-            {
-                DialogResult confirm = MessageBox.Show(this,
-                    "这是一条高风险内容，粘贴/执行前请再确认一次：\r\n\r\n" + card.Body +
-                    "\r\n\r\n是否仍要复制？",
-                    "Command Pocket · 风险确认",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning);
-                if (confirm != DialogResult.Yes)
-                    return;
-            }
+            if (!DangerGuard.ConfirmCopy(this, card))
+                return;
             Clipboard.SetText(card.Body);
             card.CopyCount++;
             card.LastUsedAt = DateTime.Now;
@@ -1424,7 +1415,7 @@ namespace CommandPocketNative
             AddEditorRow(panel, editorDesc, "何时用（一句话）");
             AddEditorRow(panel, editorBody, "正文（命令 / 提示词 / 文本）");
             AddEditorRow(panel, editorFav, null);
-            AddEditorRow(panel, editorRisk, "风险（仅自标，不影响复制）");
+            AddEditorRow(panel, editorRisk, "风险（高/极高复制前会确认）");
             AddEditorRow(panel, editorKind, "类型");
             AddEditorRow(panel, editorProduct, "产品");
             AddEditorRow(panel, editorAliases, "别名（逗号分隔，供中英检索）");
@@ -1600,6 +1591,8 @@ namespace CommandPocketNative
         {
             CommandCard card = SelectedLibraryCard();
             if (card == null)
+                return;
+            if (!DangerGuard.ConfirmCopy(this, card))
                 return;
             Clipboard.SetText(card.Body);
             card.CopyCount++;
@@ -2671,6 +2664,23 @@ namespace CommandPocketNative
         }
     }
 
+    internal static class DangerGuard
+    {
+        // 高风险复制确认（粘贴/执行前再看一眼）；high/critical 才拦截
+        public static bool ConfirmCopy(IWin32Window owner, CommandCard card)
+        {
+            if (card.Risk != "high" && card.Risk != "critical")
+                return true;
+            DialogResult result = MessageBox.Show(owner,
+                "这是一条高风险内容，粘贴/执行前请再确认一次：\r\n\r\n" + card.Body +
+                "\r\n\r\n是否仍要复制？",
+                "Command Pocket · 风险确认",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            return result == DialogResult.Yes;
+        }
+    }
+
     internal static class Risk
     {
         public static string Label(string risk)
@@ -3252,7 +3262,7 @@ namespace CommandPocketNative
             Field(sb, "rs", c.RiskScope);
             Field(sb, "rm", c.RiskMutation);
             Field(sb, "rr", c.RiskRevert);
-            sb.Append("\"fav\":").Append(c.IsFavorite ? "true" : "false").Append(',');
+            sb.Append(",\"fav\":").Append(c.IsFavorite ? "true" : "false").Append(',');
             sb.Append("\"rlabeled\":").Append(c.RiskLabeled ? "true" : "false").Append(',');
             sb.Append("\"heat\":").Append(c.Heat).Append(',');
             sb.Append("\"copies\":").Append(c.CopyCount).Append(',');
@@ -3348,6 +3358,14 @@ namespace CommandPocketNative
                     else if (key == "used") c.LastUsedAt = ParseTime(value);
                     else if (key == "created") c.CreatedAt = ParseTime(value);
                     else if (key == "updated") c.UpdatedAt = ParseTime(value);
+                    else
+                    {
+                        // 未知 key：宽容跳过（字符串值消费整串；裸值跳到分隔符）
+                        if (ch == '"')
+                            ReadJsonString(line, ref pos);
+                        else
+                            SkipRawValue(line, ref pos);
+                    }
                     SkipWs(line, ref pos);
                     if (pos < line.Length && line[pos] == ',')
                         pos++;
@@ -3378,6 +3396,12 @@ namespace CommandPocketNative
             if (DateTime.TryParseExact(value, TimeFormat, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out result))
                 return result;
             return DateTime.MinValue;
+        }
+
+        private static void SkipRawValue(string line, ref int pos)
+        {
+            while (pos < line.Length && line[pos] != ',' && line[pos] != '}')
+                pos++;
         }
 
         private static void SkipWs(string line, ref int pos)
