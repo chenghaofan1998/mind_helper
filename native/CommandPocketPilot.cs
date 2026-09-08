@@ -903,7 +903,6 @@ namespace CommandPocketPilot
             public string Badge;       // 副文字
             public string Sub;         // 时间/频次
             public bool Danger;
-            public int Freq;
         }
 
         private readonly PilotStore store;

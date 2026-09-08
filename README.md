@@ -30,10 +30,11 @@ dist-native/                npm run desktop 的开发构建输出
 ## 开发构建（改动 native 源码后）
 
 ```powershell
-npm run desktop
+npm run desktop            # 编译旧版 CommandPocketNative（已退役）
+npm run desktop:pilot      # 编译 v5-pilot：native\CommandPocketPilot.cs + --self-test → dist-native\CommandPocketPilot.exe
 ```
 
-→ 编译 → 跑 `--self-test` 自测 → 输出 `dist-native\`
+> Linux 容器内可做**虚拟编译验证**（无 Windows）：先 `bash scripts/setup-cs-env.sh` 装一次工具链（~230MB），此后每次改代码跑 `bash scripts/cs-check.sh`——[1] Roslyn 全文件编译（语法/类型）[2] 剥离 UI 层 net8 真跑 SelfTest。真机编译与 UI 运行仍需 Windows。
 
 ## 重新打包
 
