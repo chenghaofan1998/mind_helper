@@ -996,7 +996,7 @@ namespace CommandPocketPilot
             // 若等首次 ShowPilot 才建窗，第一次按 Ctrl+Alt+P 时窗口尚不存在 → 快捷键永不生效。
             pocket = new PilotForm(store);
             pocket.FormClosed += delegate { pocket = null; };
-            pocket.CreateHandle();
+            pocket.EnsureHandle();
             // 启动只驻托盘：不自动弹窗、不读剪贴板（自证口径：任何读取 = 一次可见手势）
             if (!store.ReadFlag("welcome"))
             {
@@ -1216,6 +1216,13 @@ namespace CommandPocketPilot
             if (!RegisterHotKey(Handle, HotkeyId, ModAlt | ModControl, 0x50))
                 MessageBox.Show("全局热键 Ctrl+Alt+P 注册失败（可能被其他程序占用），可用托盘图标打开。",
                     "Command Pocket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // 供 AppContext 在启动时预创建句柄注册全局热键（CreateHandle 受保护，需在此包装）
+        public void EnsureHandle()
+        {
+            if (!IsHandleCreated)
+                CreateHandle();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
