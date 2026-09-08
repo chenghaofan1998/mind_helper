@@ -1099,9 +1099,11 @@ namespace CommandPocketPilot
                 }
             }
 
-            // ③ 再来一次（排序结果）
+            // ③ 再来一次（排序结果）：首屏只放 6 条（一眼认出即走）；
+            // 有输入 = 用户在找 → 放开上限，全部匹配可滚动
+            bool browsing = q.Length > 0;
             int shown = 0;
-            for (int i = 0; i < cards.Count && shown < 6; i++)
+            for (int i = 0; i < cards.Count && (browsing || shown < 6); i++)
             {
                 Card c = cards[i];
                 if (!Matches(c, q)) continue;
