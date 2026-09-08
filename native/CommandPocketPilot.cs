@@ -1040,7 +1040,7 @@ namespace CommandPocketPilot
                 pocket.FormClosed += delegate { pocket = null; };
             }
             FirstUseGuide();
-            pocket.Reload();
+            pocket.Reload(true);
             pocket.Show();
             pocket.Activate();
             pocket.FocusSearch();
@@ -1238,7 +1238,7 @@ namespace CommandPocketPilot
                 if (Visible) HideWindow();
                 else
                 {
-                    Reload();
+            Reload(true);
                     Show();
                     Activate();
                     FocusSearch();
@@ -1288,28 +1288,30 @@ namespace CommandPocketPilot
         }
 
         // ============================================================ 数据装配
-        // 每次唤出（=用户手势）内完成一次 IO：读库、排序、读一次剪贴板、读一次历史建议、当日计数
-        public void Reload()
+        // 每次唤出（=用户手势）内做一次 IO：读库、排序、剪贴板一次、历史建议一次、当日计数。
+        // readClip=false：内部刷新（存卡后 Reload）不再读剪贴板/不重复计 peek，守住“唤出内一次”口径。
+        public void Reload(bool readClip)
         {
             cards = store.LoadCards();
             cards.Sort(Rules.CompareRecent);
             cardCount = cards.Count;
-            BuildSnapshots();
+            BuildSnapshots(readClip);
             RefreshRows();
         }
 
-        private void BuildSnapshots()
+        private void BuildSnapshots(bool readClip)
         {
             todayCount = store.CountToday();
             suggestSnapshot = new List<Suggestion>();
             if (search.Text != null && search.Text.Trim().Length > 0)
                 return; // 有过滤词时无需 action 快照
-            // 剪贴板：手势内一次；可关；敏感内容一律不 offer
-            if (store.ReadSettingClipPeek())
+            if (readClip && store.ReadSettingClipPeek())
             {
                 string clip = TryReadClipboard();
                 if (Rules.IsCommandish(clip) && !Rules.IsSensitive(clip) && !ExistsInLibrary(clip))
                     clipOffer = clip;
+                else
+                    clipOffer = "";
                 store.Metric("peek", "clip"); // 读取审计流水（不含内容）
             }
             SourceInfo src = History.BestSource();
@@ -1578,10 +1580,10 @@ namespace CommandPocketPilot
             if (r.Type == RowType.ClipSave || r.Type == RowType.Suggest)
             {
                 bool fromClip = r.Type == RowType.ClipSave;
-                bool added = store.Upsert(Cards.New(r.ActionBody, fromClip ? "clipboard" : "history", true));
+                store.Upsert(Cards.New(r.ActionBody, fromClip ? "clipboard" : "history", true));
                 store.Metric(fromClip ? "save" : "adopt", fromClip ? "clip" : "suggest");
-                // 存后停留并刷新：新卡按"刚用"置顶成默认选中=可见确认；建议行消失；Esc 收起
-                Reload();
+                // 存后停留并刷新（内部刷新，不重读剪贴板）：新卡置顶成默认选中=可见确认；Esc 收起
+                Reload(false);
                 return;
             }
             // Card：危险先确认，再复制
@@ -1620,7 +1622,7 @@ namespace CommandPocketPilot
                 c.Purpose = dlg.NoteText.Trim();
                 store.Upsert(c);
                 store.Metric("save", "manual");
-                Reload();
+                Reload(false);
             }
         }
 
