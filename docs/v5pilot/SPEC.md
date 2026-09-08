@@ -111,7 +111,7 @@
 
 另起**新的最小单文件** `native/CommandPocketPilot.cs`（已实现 ~1550 行：含旧库 jsonl 宽容解析器与内置 SelfTest，属必要成本；仍单文件、无第三方依赖），旧代码留 git 历史不删不动。
 
-**Linux 容器内虚拟验证（已搭好）**：`bash scripts/setup-cs-env.sh`（一次性装 .NET SDK + net472 引用程序集到 `~/.cs-toolchain`）→ `bash scripts/cs-check.sh`（[1] Roslyn 编译全文件校验语法/类型 [2] 剥离 UI 层在 net8 真跑 SelfTest）。真机编译 `npm run desktop:pilot` 仍需 Windows。
+**验证路径**：Linux 容器内不做工具链安装，代码经静态审查 + Node 规则对拍（scripts/pilot-check.js）；编译与 UI 真机验证以 Windows `npm run desktop:pilot` 为准。
 小文件 = 更可审计自证（零监听证据更硬）+ 杀软信誉友好。
 
 | 模块 | 做法 | 复用 |
