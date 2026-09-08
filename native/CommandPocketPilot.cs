@@ -992,6 +992,11 @@ namespace CommandPocketPilot
             tray.Visible = true;
             tray.ContextMenuStrip = BuildTrayMenu();
             tray.DoubleClick += delegate { ShowPilot(); };
+            // 预创建小窗（保持隐藏）→ 立即拿到窗口句柄并注册全局热键。
+            // 若等首次 ShowPilot 才建窗，第一次按 Ctrl+Alt+P 时窗口尚不存在 → 快捷键永不生效。
+            pocket = new PilotForm(store);
+            pocket.FormClosed += delegate { pocket = null; };
+            pocket.CreateHandle();
             // 启动只驻托盘：不自动弹窗、不读剪贴板（自证口径：任何读取 = 一次可见手势）
             if (!store.ReadFlag("welcome"))
             {
@@ -1168,8 +1173,8 @@ namespace CommandPocketPilot
             list.BorderStyle = BorderStyle.None;
             list.BackColor = Ui.Back;
             list.ForeColor = Ui.Ink;
-            list.Columns.Add("cmd", 360);
-            list.Columns.Add("meta", 130);
+            list.Columns.Add("cmd", 345);
+            list.Columns.Add("meta", 155);
             list.OwnerDraw = true;
             list.HeaderStyle = ColumnHeaderStyle.None;
             list.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e) { };
@@ -1463,14 +1468,12 @@ namespace CommandPocketPilot
             bool selected = e.Item.Selected;
 
             Rectangle row = e.Item.Bounds;
-            row.X = 0;
-            row.Width = list.ClientSize.Width;
+            Rectangle col = e.SubItem.Bounds;   // 本列矩形（每列自绘自己的背景与文字，顺序无关、互不覆盖）
 
             if (r.Type == RowType.Empty)
             {
                 if (e.ColumnIndex != 0) return;
-                if (selected)
-                    e.Graphics.FillRectangle(BSelected, row);
+                e.Graphics.FillRectangle(selected ? BSelected : BBack, row);
                 TextRenderer.DrawText(e.Graphics, r.Badge, FHint, row, Ui.Muted,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
                 return;
@@ -1483,8 +1486,9 @@ namespace CommandPocketPilot
 
             if (e.ColumnIndex == 1)
             {
-                // 仅画右侧 meta（背景已由 col0 全宽铺设，不得再刷）
-                Rectangle meta = new Rectangle(row.X + 4, row.Y, row.Width - 8, row.Height);
+                // meta 列：自绘背景 + 右侧文字（不依赖 col0 先画，杜绝悬停重绘时被盖掉）
+                e.Graphics.FillRectangle(bg, col);
+                Rectangle meta = new Rectangle(col.X + 4, row.Y, col.Width - 8, row.Height);
                 string metaText = (r.Type == RowType.Card)
                     ? r.Sub
                     : (r.Badge + (r.Sub.Length == 0 ? "" : "  " + r.Sub));
@@ -1496,12 +1500,12 @@ namespace CommandPocketPilot
                 return;
             }
 
-            // col0：整行背景 + 危险点 + 主文本
-            e.Graphics.FillRectangle(bg, row);
+            // col0：自绘背景 + 危险点 + 主文本（不越界盖 meta 列）
+            e.Graphics.FillRectangle(bg, col);
             if (r.Danger)
-                e.Graphics.FillEllipse(BDanger, new Rectangle(row.X + 8, row.Y + row.Height / 2 - 3, 6, 6));
-            int textX = row.X + (r.Danger ? 20 : 8);
-            Rectangle text = new Rectangle(textX, row.Y, row.Width - textX - 8, row.Height);
+                e.Graphics.FillEllipse(BDanger, new Rectangle(col.X + 8, row.Y + row.Height / 2 - 3, 6, 6));
+            int textX = col.X + (r.Danger ? 20 : 8);
+            Rectangle text = new Rectangle(textX, row.Y, col.Width - (textX - col.X) - 6, row.Height);
             string main = (r.Type == RowType.Card) ? r.Card.Body : r.ActionBody;
             SolidBrush ink = BInk;
             if (r.Type == RowType.ClipSave || r.Type == RowType.Suggest) ink = BAccent;
