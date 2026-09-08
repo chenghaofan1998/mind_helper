@@ -11,6 +11,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace CommandPocketPilot
@@ -22,14 +23,26 @@ namespace CommandPocketPilot
         [STAThread]
         private static void Main(string[] args)
         {
+            // 自测优先：build.ps1 在托盘可能已运行时也会调 --self-test，不能被单实例 Mutex 挡住
             if (args != null && args.Length > 0 && args[0] == "--self-test")
             {
                 Environment.Exit(SelfTest.Run());
                 return;
             }
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new PilotAppContext());
+            // 单实例：双开会并发写同一 jsonl 丢更新
+            bool createdNew;
+            using (Mutex single = new Mutex(true, "CommandPocketPilot_SingleInstance", out createdNew))
+            {
+                if (!createdNew)
+                {
+                    MessageBox.Show("Command Pocket 已在运行，请从托盘图标唤出。",
+                        "Command Pocket", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new PilotAppContext());
+            }
         }
     }
 
@@ -63,7 +76,8 @@ namespace CommandPocketPilot
 
     internal static class Cards
     {
-        public static Card New(string body, string source)
+        // markUsed=false（历史导入/收录）：不伪造“用过”时间，排到真实使用之后，防止旧命令标“上次:今天”挤占首屏
+        public static Card New(string body, string source, bool markUsed)
         {
             DateTime now = DateTime.Now;
             Card c = new Card();
@@ -85,10 +99,18 @@ namespace CommandPocketPilot
             c.IsFavorite = false;
             c.Heat = 0;
             c.CopyCount = 0;
-            c.LastUsedAt = now;
+            c.LastUsedAt = markUsed ? now : DateTime.MinValue;
             c.CreatedAt = now;
             c.UpdatedAt = now;
             return c;
+        }
+
+        public static bool IsDanger(Card c)
+        {
+            // 危险门实时判定：存储 risk 或现行规则命中任一即拦（防旧库缺省 risk=low 的旧危险命令绕过）
+            if (c == null) return false;
+            if (c.Risk == "high" || c.Risk == "critical") return true;
+            return Rules.GuessRisk(c.Body) != "low";
         }
 
         public static string Truncate(string s, int max)
@@ -181,7 +203,7 @@ namespace CommandPocketPilot
             return false;
         }
 
-        // "再来一次"排序：最近干成过(lastUsedAt) 为主；同刻用次数；无使用记录按创建时间。
+        // "再来一次"排序：最近干成过(lastUsedAt) 为主；未用过按创建时间；再并列看更新/复制次数；最后按标题（保证稳定）
         public static int CompareRecent(Card a, Card b)
         {
             DateTime ta = a.LastUsedAt == DateTime.MinValue ? a.CreatedAt : a.LastUsedAt;
@@ -190,6 +212,8 @@ namespace CommandPocketPilot
             if (byTime != 0) return byTime;
             int byCopies = b.CopyCount.CompareTo(a.CopyCount);
             if (byCopies != 0) return byCopies;
+            int byUpdated = DateTime.Compare(b.UpdatedAt, a.UpdatedAt);
+            if (byUpdated != 0) return byUpdated;
             return string.Compare(a.Title, b.Title, StringComparison.Ordinal);
         }
 
@@ -301,6 +325,8 @@ namespace CommandPocketPilot
                 if (c.RiskScope == null) c.RiskScope = "";
                 if (c.RiskMutation == null) c.RiskMutation = "";
                 if (c.RiskRevert == null || c.RiskRevert == "") c.RiskRevert = "unknown";
+                if (c.CopyCount < 0) c.CopyCount = 0;
+                if (c.Heat < 0) c.Heat = 0;
                 if (c.LastUsedAt == DateTime.MinValue) c.LastUsedAt = c.UpdatedAt;
                 if (c.CreatedAt == DateTime.MinValue) c.CreatedAt = DateTime.Now;
                 if (c.UpdatedAt == DateTime.MinValue) c.UpdatedAt = DateTime.Now;
@@ -362,8 +388,21 @@ namespace CommandPocketPilot
 
         private static void SkipRawValue(string line, ref int pos)
         {
-            while (pos < line.Length && line[pos] != ',' && line[pos] != '}')
+            // 未知 key 的裸值可能含嵌套对象/数组：按深度跳到真正的分隔符/结尾，避免提前截断整行解析
+            int depth = 0;
+            while (pos < line.Length)
+            {
+                char ch = line[pos];
+                if (ch == '{' || ch == '[') depth++;
+                else if (ch == '}' || ch == ']')
+                {
+                    if (depth == 0) return;
+                    depth--;
+                }
+                else if (ch == ',' && depth == 0)
+                    return;
                 pos++;
+            }
         }
 
         private static void SkipWs(string line, ref int pos)
@@ -392,7 +431,13 @@ namespace CommandPocketPilot
                     {
                         if (pos + 4 < line.Length)
                         {
-                            sb.Append((char)Convert.ToInt32(line.Substring(pos + 1, 4), 16));
+                            string hex = line.Substring(pos + 1, 4);
+                            int code;
+                            if (Int32.TryParse(hex, System.Globalization.NumberStyles.HexNumber,
+                                System.Globalization.CultureInfo.InvariantCulture, out code))
+                                sb.Append((char)code);
+                            else
+                                sb.Append('?');
                             pos += 4;
                         }
                     }
@@ -443,9 +488,40 @@ namespace CommandPocketPilot
                 "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt");
         }
 
+        // 多源探测：在候选历史源中取“最后写入且非空”者（用户活跃 shell 可能不是 PowerShell → 否则读到陈年文件）
+        public static SourceInfo BestSource()
+        {
+            List<string> candidates = new List<string>();
+            candidates.Add(DefaultPath()); // PSReadLine（PS5.1 与 pwsh7-on-Windows 共用）
+            string home = Environment.GetEnvironmentVariable("USERPROFILE");
+            if (!String.IsNullOrEmpty(home))
+                candidates.Add(Path.Combine(home, ".bash_history")); // Git Bash
+            SourceInfo best = null;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                try
+                {
+                    string p = candidates[i];
+                    if (p == null || !File.Exists(p)) continue;
+                    FileInfo fi = new FileInfo(p);
+                    if (fi.Length == 0) continue;
+                    SourceInfo cand = new SourceInfo();
+                    cand.Path = p;
+                    cand.Modified = fi.LastWriteTime;
+                    if (best == null || cand.Modified > best.Modified)
+                        best = cand;
+                }
+                catch
+                {
+                }
+            }
+            return best;
+        }
+
         private const int TailBytes = 4 * 1024 * 1024;
 
         // 返回历史命令行（trim、去空、去 # 注释）。文件不存在/读失败返回 null。
+        // 统一 FileShare.ReadWrite + 循环读满：PSReadLine 写盘瞬间不被锁，防止导入/建议静默全无（“命令不全”根因之一）。
         public static List<string> ReadLines(string path)
         {
             if (path == null || !File.Exists(path))
@@ -453,27 +529,29 @@ namespace CommandPocketPilot
             try
             {
                 string text;
-                long len = new FileInfo(path).Length;
-                if (len <= TailBytes)
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 {
-                    text = File.ReadAllText(path, DetectEncoding(path));
-                }
-                else
-                {
-                    // 大文件只取尾部（历史总是最近的行在后）：对齐编码单元边界并丢首残行
-                    Encoding enc = DetectEncoding(path);
-                    bool wide = enc == Encoding.Unicode || enc == Encoding.BigEndianUnicode;
-                    long start = len - TailBytes;
-                    if (wide && (start & 1) == 1) start++;
-                    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    long len = fs.Length;
+                    if (len == 0)
+                        return new List<string>();
+                    if (len <= TailBytes)
                     {
-                        fs.Seek(start, SeekOrigin.Begin);
-                        byte[] buf = new byte[fs.Length - start];
-                        fs.Read(buf, 0, buf.Length);
-                        text = enc.GetString(buf);
+                        // StreamReader 自动识别 BOM（UTF-8/UTF-16）；无 BOM 时按 UTF-8
+                        using (StreamReader sr = new StreamReader(fs, Encoding.UTF8, true))
+                            text = sr.ReadToEnd();
                     }
-                    int firstLf = text.IndexOf('\n');
-                    if (firstLf >= 0) text = text.Substring(firstLf + 1);
+                    else
+                    {
+                        // 大文件只取尾部（历史总是最近的行在后）：对齐编码单元边界并丢首残行
+                        Encoding enc = PeekEncoding(fs);
+                        bool wide = enc == Encoding.Unicode || enc == Encoding.BigEndianUnicode;
+                        long start = len - TailBytes;
+                        if (wide && (start & 1) == 1) start++;
+                        fs.Seek(start, SeekOrigin.Begin);
+                        text = enc.GetString(ReadFully(fs, (int)(len - start)));
+                        int firstLf = text.IndexOf('\n');
+                        if (firstLf >= 0) text = text.Substring(firstLf + 1);
+                    }
                 }
                 string[] raw = text.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 List<string> result = new List<string>();
@@ -492,22 +570,31 @@ namespace CommandPocketPilot
             }
         }
 
-        private static Encoding DetectEncoding(string path)
+        private static byte[] ReadFully(FileStream fs, int length)
         {
-            try
+            byte[] buf = new byte[length];
+            int off = 0;
+            while (off < length)
             {
-                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read))
-                {
-                    if (fs.Length < 2) return Encoding.UTF8;
-                    int b0 = fs.ReadByte();
-                    int b1 = fs.ReadByte();
-                    if (b0 == 0xFF && b1 == 0xFE) return Encoding.Unicode;
-                    if (b0 == 0xFE && b1 == 0xFF) return Encoding.BigEndianUnicode;
-                }
+                int n = fs.Read(buf, off, length - off);
+                if (n <= 0) break;
+                off += n;
             }
-            catch
-            {
-            }
+            if (off != length)
+                Array.Resize(ref buf, off);
+            return buf;
+        }
+
+        private static Encoding PeekEncoding(FileStream fs)
+        {
+            // 读文件头 BOM 判断编码（调用方随后会 Seek 到自己要读的位置）
+            fs.Seek(0, SeekOrigin.Begin);
+            int b0 = fs.ReadByte();
+            int b1 = fs.ReadByte();
+            if (b0 == 0xFF && b1 == 0xFE) return Encoding.Unicode;
+            if (b0 == 0xFE && b1 == 0xFF) return Encoding.BigEndianUnicode;
+            int b2 = fs.ReadByte();
+            if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF) return Encoding.UTF8;
             return Encoding.UTF8;
         }
 
@@ -519,6 +606,7 @@ namespace CommandPocketPilot
 
             Dictionary<string, int> count = new Dictionary<string, int>();
             Dictionary<string, string> lastSeen = new Dictionary<string, string>();
+            Dictionary<string, int> lastIdx = new Dictionary<string, int>();
             List<string> order = new List<string>();
             Dictionary<string, bool> inLibrary = new Dictionary<string, bool>();
             for (int i = 0; i < existing.Count; i++)
@@ -534,17 +622,21 @@ namespace CommandPocketPilot
                 int c;
                 count.TryGetValue(key, out c);
                 count[key] = c + 1;
-                lastSeen[key] = line;
+                lastSeen[key] = line;   // 保留原始行（大小写敏感的命令原样入库/展示）
+                lastIdx[key] = i;       // 同频时按“最近一次出现”行号取新者
                 if (c == 0) order.Add(key);
             }
 
-            // 按频次降序、频次并列按最近出现（order 靠后者更新）
+            // 按频次降序；频次并列按最近出现行号降序（稳定，不依赖 List.Sort 稳定性）
             List<string> keys = new List<string>(order);
             keys.Sort(delegate(string a, string b)
             {
                 int ca = count[a];
                 int cb = count[b];
                 if (cb != ca) return cb.CompareTo(ca);
+                int ia = lastIdx[a];
+                int ib = lastIdx[b];
+                if (ib != ia) return ib.CompareTo(ia);
                 return 0;
             });
             for (int i = 0; i < keys.Count && result.Count < topN; i++)
@@ -566,6 +658,12 @@ namespace CommandPocketPilot
     {
         public string Body;
         public int Freq;
+    }
+
+    internal sealed class SourceInfo
+    {
+        public string Path;
+        public DateTime Modified;
     }
 
     // ============================================================ 存储（复用旧库目录与格式）
@@ -593,34 +691,77 @@ namespace CommandPocketPilot
 
         public string Dir { get { return dir; } }
 
-        // ---------- 设置 ----------
-        public bool ReadSettingClipPeek()
+        // ---------- 设置（settings.ini：每行 name=value，宽容） ----------
+        public string ReadSetting(string name)
         {
             try
             {
                 if (File.Exists(settingsPath))
                 {
+                    string prefix = name + "=";
                     string[] lines = File.ReadAllLines(settingsPath, Encoding.UTF8);
                     for (int i = 0; i < lines.Length; i++)
-                        if (lines[i].Trim() == "clip=off")
-                            return false;
+                    {
+                        string t = lines[i].Trim();
+                        if (t.StartsWith(prefix))
+                            return t.Substring(prefix.Length).Trim();
+                    }
                 }
             }
             catch
             {
             }
-            return true;
+            return "";
         }
 
-        public void WriteSettingClipPeek(bool on)
+        public void WriteSetting(string name, string value)
         {
             try
             {
-                File.WriteAllText(settingsPath, on ? "clip=on" : "clip=off", Encoding.UTF8);
+                string prefix = name + "=";
+                List<string> lines = new List<string>();
+                bool replaced = false;
+                if (File.Exists(settingsPath))
+                {
+                    string[] raw = File.ReadAllLines(settingsPath, Encoding.UTF8);
+                    for (int i = 0; i < raw.Length; i++)
+                    {
+                        if (raw[i].Trim().StartsWith(prefix))
+                        {
+                            lines.Add(prefix + value);
+                            replaced = true;
+                        }
+                        else if (raw[i].Trim().Length > 0)
+                            lines.Add(raw[i].Trim());
+                    }
+                }
+                if (!replaced)
+                    lines.Add(prefix + value);
+                File.WriteAllText(settingsPath, String.Join(Environment.NewLine, lines.ToArray()) + Environment.NewLine, Encoding.UTF8);
             }
             catch
             {
             }
+        }
+
+        public bool ReadFlag(string name)
+        {
+            return ReadSetting(name) == "1";
+        }
+
+        public void WriteFlag(string name, bool on)
+        {
+            WriteSetting(name, on ? "1" : "0");
+        }
+
+        public bool ReadSettingClipPeek()
+        {
+            return ReadSetting("clip") != "off";
+        }
+
+        public void WriteSettingClipPeek(bool on)
+        {
+            WriteSetting("clip", on ? "on" : "off");
         }
 
         // ---------- 卡 ----------
@@ -628,12 +769,20 @@ namespace CommandPocketPilot
         {
             List<Card> result = new List<Card>();
             if (!File.Exists(cardsPath)) return result;
-            string[] lines = File.ReadAllLines(cardsPath, Encoding.UTF8);
-            for (int i = 0; i < lines.Length; i++)
+            try
             {
-                Card c = Json.ReadCard(lines[i]);
-                if (c != null)
-                    result.Add(c);
+                string[] lines = File.ReadAllLines(cardsPath, Encoding.UTF8);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    Card c = Json.ReadCard(lines[i]);
+                    if (c != null)
+                        result.Add(c);
+                }
+            }
+            catch
+            {
+                // 读盘失败不崩：返回已解析部分，错误进流水（托盘常驻程序优先级=不崩）
+                Metric("err", "load");
             }
             return result;
         }
@@ -645,15 +794,24 @@ namespace CommandPocketPilot
 
         public void SaveCards(List<Card> cards)
         {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < cards.Count; i++)
-                sb.Append(Json.WriteCard(cards[i])).Append(Environment.NewLine);
-            string tempPath = cardsPath + ".tmp";
-            File.WriteAllText(tempPath, sb.ToString(), Encoding.UTF8);
-            if (File.Exists(cardsPath))
-                File.Replace(tempPath, cardsPath, cardsPath + ".bak", true);
-            else
-                File.Move(tempPath, cardsPath);
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < cards.Count; i++)
+                    sb.Append(Json.WriteCard(cards[i])).Append(Environment.NewLine);
+                string tempPath = cardsPath + ".tmp";
+                File.WriteAllText(tempPath, sb.ToString(), Encoding.UTF8);
+                if (File.Exists(cardsPath))
+                    File.Replace(tempPath, cardsPath, cardsPath + ".bak", true);
+                else
+                    File.Move(tempPath, cardsPath);
+            }
+            catch (Exception ex)
+            {
+                // 写盘失败不崩：清残留 .tmp、流水告警（下次写盘重试）
+                try { if (File.Exists(cardsPath + ".tmp")) File.Delete(cardsPath + ".tmp"); } catch { }
+                Metric("err", "save:" + ex.Message);
+            }
         }
 
         // 同 body 视为同卡：命中则更新来源/风险/时间；否则追加。返回 true=新增。
@@ -667,7 +825,9 @@ namespace CommandPocketPilot
                 {
                     added = false;
                     all[i].UpdatedAt = DateTime.Now;
-                    all[i].Source = card.Source;
+                    // 来源保护：仅旧卡来源为空时才覆盖（反复导入不得把 clipboard/manual 洗成 history，信任链不失真）
+                    if (String.IsNullOrEmpty(all[i].Source) || all[i].Source == "预置")
+                        all[i].Source = card.Source;
                     if (all[i].Risk == "low" && card.Risk != "low")
                         all[i].Risk = card.Risk;
                     if (card.Purpose.Length > 0 && all[i].Purpose.Length == 0)
@@ -683,12 +843,19 @@ namespace CommandPocketPilot
             return added;
         }
 
-        public void ImportHistory(int topN)
+        // 多源导入（取最后写入者）：频次 Top-N 去重入库，保留原始大小写；新卡不伪造“用过”时间。返回给用户看的摘要。
+        public string ImportHistory(int topN)
         {
-            List<string> lines = History.ReadLines(History.DefaultPath());
-            if (lines == null) return;
-            // 频次 Top-N 全部导入（含已在库则更新热度）
+            History.SourceInfo src = History.BestSource();
+            if (src == null)
+                return "未找到可读终端历史。已检查：\r\n\r\n" + CandidateListText();
+            List<string> lines = History.ReadLines(src.Path);
+            if (lines == null || lines.Count == 0)
+                return "终端历史为空或不可读：\r\n" + src.Path;
+
             Dictionary<string, int> count = new Dictionary<string, int>();
+            Dictionary<string, string> lastSeen = new Dictionary<string, string>();
+            Dictionary<string, int> lastIdx = new Dictionary<string, int>();
             List<string> order = new List<string>();
             for (int i = 0; i < lines.Count; i++)
             {
@@ -698,24 +865,40 @@ namespace CommandPocketPilot
                 if (key.Length == 0) continue;
                 int c;
                 count.TryGetValue(key, out c);
-                if (c == 0) order.Add(key);
                 count[key] = c + 1;
+                lastSeen[key] = line;   // 原始行（大小写敏感）
+                lastIdx[key] = i;
+                if (c == 0) order.Add(key);
             }
             order.Sort(delegate(string a, string b)
             {
                 int ca = count[a];
                 int cb = count[b];
                 if (cb != ca) return cb.CompareTo(ca);
-                return 0;
+                return lastIdx[b].CompareTo(lastIdx[a]); // 同频取最近出现
             });
             int imported = 0;
             for (int i = 0; i < order.Count && imported < topN; i++)
             {
-                string body = order[i];
-                Card c = Cards.New(body, "history");
+                Card c = Cards.New(lastSeen[order[i]], "history", false);
                 if (Upsert(c))
                     imported++;
             }
+            return "已从终端历史收录 " + imported + " 条（来源：\r\n" + src.Path +
+                "\r\n\r\n文件最后写入：" + src.Modified.ToString("MM-dd HH:mm") + "）";
+        }
+
+        private string CandidateListText()
+        {
+            History.SourceInfo best = History.BestSource();
+            string ps = History.DefaultPath();
+            string home = Environment.GetEnvironmentVariable("USERPROFILE");
+            string bash = String.IsNullOrEmpty(home) ? null : Path.Combine(home, ".bash_history");
+            StringBuilder sb = new StringBuilder();
+            sb.Append((ps != null && File.Exists(ps)) ? "有" : "无").Append("  PowerShell 历史 (PSReadLine)\r\n");
+            sb.Append((bash != null && File.Exists(bash)) ? "有" : "无").Append("  Git Bash 历史 (.bash_history)\r\n");
+            sb.Append("支持：PowerShell 5.1 / PowerShell 7 / Git Bash。CMD 无持久历史。");
+            return sb.ToString();
         }
 
         public void BumpCopy(Card card)
@@ -809,9 +992,14 @@ namespace CommandPocketPilot
             tray.Visible = true;
             tray.ContextMenuStrip = BuildTrayMenu();
             tray.DoubleClick += delegate { ShowPilot(); };
-            ShowPilot();
-            if (store.CountCards() == 0)
-                MaybeOfferImport();
+            // 启动只驻托盘：不自动弹窗、不读剪贴板（自证口径：任何读取 = 一次可见手势）
+            if (!store.ReadFlag("welcome"))
+            {
+                store.WriteFlag("welcome", true);
+                tray.BalloonTipTitle = "Command Pocket";
+                tray.BalloonTipText = "按 Ctrl+Alt+P 唤出小窗。\r\n“粘贴即存”会读取一次剪贴板用于预填，可在托盘菜单随时关闭。";
+                tray.ShowBalloonTip(5000);
+            }
         }
 
         private ContextMenuStrip BuildTrayMenu()
@@ -820,7 +1008,9 @@ namespace CommandPocketPilot
             menu.Items.Add("打开小窗", null, delegate { ShowPilot(); });
             menu.Items.Add("导入终端历史", null, delegate
             {
-                store.ImportHistory(20);
+                string summary = store.ImportHistory(20);
+                MessageBox.Show(summary, "Command Pocket · 导入终端历史",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
                 ShowPilot();
             });
             menu.Items.Add(new ToolStripSeparator());
@@ -844,27 +1034,32 @@ namespace CommandPocketPilot
                 pocket = new PilotForm(store);
                 pocket.FormClosed += delegate { pocket = null; };
             }
+            FirstUseGuide();
             pocket.Reload();
             pocket.Show();
             pocket.Activate();
             pocket.FocusSearch();
         }
 
-        private void MaybeOfferImport()
+        // 空库首启（只在用户可见手势内弹一次；结果落 settings，不再反复问）
+        private void FirstUseGuide()
         {
-            string path = History.DefaultPath();
-            if (!File.Exists(path))
-                return;
+            if (store.ReadFlag("importask")) return;
+            if (store.CountCards() > 0) return;
+            History.SourceInfo src = History.BestSource();
+            if (src == null) return;
             DialogResult r = MessageBox.Show(
-                "库里还没有命令。要导入终端历史里最常用的 20 条吗？\r\n\r\n" +
-                "(仅本地读取，自动剔除含 password/token/密钥 的行)",
+                "库里还没有命令。最近写入的终端历史（" + src.Modified.ToString("MM-dd HH:mm") + "）可导入：\r\n\r\n" +
+                "收录最常用的 20 条？\r\n(仅本地读取，自动剔除含 password/token/密钥 的行)",
                 "Command Pocket · 首次引导",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
+            store.WriteFlag("importask", true);
             if (r == DialogResult.Yes)
             {
-                store.ImportHistory(20);
-                ShowPilot();
+                string summary = store.ImportHistory(20);
+                if (summary != null && summary.Length > 0)
+                    MessageBox.Show(summary, "Command Pocket · 导入", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -911,6 +1106,10 @@ namespace CommandPocketPilot
         private Label status;
         private List<Card> cards = new List<Card>();
         private List<Row> rows = new List<Row>();
+        private List<Suggestion> suggestSnapshot = new List<Suggestion>();
+        private int[] todayCount = new int[] { 0, 0 };
+        private string clipOffer = "";          // 本次唤出读到的候选剪贴板文本
+        private string offeredClip = "";   // 本会话已 offer 过的剪贴板文本（同文本不重复打扰）
 
         public PilotForm(PilotStore store)
         {
@@ -920,7 +1119,9 @@ namespace CommandPocketPilot
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            Location = new Point(Screen.PrimaryScreen.WorkingArea.Right - 560, Screen.PrimaryScreen.WorkingArea.Top + 60);
+            // 按鼠标所在屏定位（人在副屏时不弹错屏）
+            Screen sc = Screen.FromPoint(Cursor.Position);
+            Location = new Point(sc.WorkingArea.Right - 560, sc.WorkingArea.Top + 60);
             Size = new Size(520, 360);
             BackColor = Ui.Back;
             BuildUi();
@@ -978,6 +1179,16 @@ namespace CommandPocketPilot
             list.Font = new Font("Microsoft YaHei UI", 10F);
             list.DoubleClick += delegate { CopySelected(); };
             list.KeyDown += OnListKeyDown;
+            // 列表上直接打字 → 转发回搜索框（焦点滞留列表也能过滤）
+            list.KeyPress += delegate(object s, KeyPressEventArgs e)
+            {
+                if (char.IsControl(e.KeyChar)) return;
+                search.Text += e.KeyChar;
+                search.SelectionStart = search.TextLength;
+                search.Focus();
+                e.Handled = true;
+            };
+            list.SelectedIndexChanged += delegate { UpdateStatus(); };
             Controls.Add(list);
 
             status = new Label();
@@ -1009,7 +1220,7 @@ namespace CommandPocketPilot
         {
             if (m.Msg == WmHotkey && (int)m.WParam == HotkeyId)
             {
-                if (Visible) Hide();
+                if (Visible) HideWindow();
                 else
                 {
                     Reload();
@@ -1062,46 +1273,41 @@ namespace CommandPocketPilot
         }
 
         // ============================================================ 数据装配
+        // 每次唤出（=用户手势）内完成一次 IO：读库、排序、读一次剪贴板、读一次历史建议、当日计数
         public void Reload()
         {
             cards = store.LoadCards();
             cards.Sort(Rules.CompareRecent);
+            BuildSnapshots();
             RefreshRows();
+        }
+
+        private void BuildSnapshots()
+        {
+            todayCount = store.CountToday();
+            suggestSnapshot = new List<Suggestion>();
+            if (search.Text != null && search.Text.Trim().Length > 0)
+                return; // 有过滤词时无需 action 快照
+            // 剪贴板：手势内一次；可关；敏感内容一律不 offer
+            if (store.ReadSettingClipPeek())
+            {
+                string clip = TryReadClipboard();
+                if (Rules.IsCommandish(clip) && !Rules.IsSensitive(clip) && !ExistsInLibrary(clip))
+                    clipOffer = clip;
+                store.Metric("peek", "clip"); // 读取审计流水（不含内容）
+            }
+            History.SourceInfo src = History.BestSource();
+            if (src != null)
+                suggestSnapshot = History.CollectSuggestions(History.ReadLines(src.Path), cards, 3, 3);
         }
 
         private void RefreshRows()
         {
             string q = search.Text == null ? "" : search.Text.Trim();
             rows.Clear();
-
-            // 输入了过滤词：只做子串过滤，action 行不掺和
-            if (q.Length == 0)
-            {
-                // ① 粘贴即存（热键手势内读一次剪贴板；可关；永不自动选中，需 ↓ 后回车才存）
-                if (store.ReadSettingClipPeek())
-                {
-                    string clip = TryReadClipboard();
-                    if (Rules.IsCommandish(clip) && !ExistsInLibrary(clip))
-                    {
-                        rows.Add(MakeAction(RowType.ClipSave, clip,
-                            "剪贴板·回车即存", ""));
-                    }
-                }
-
-                // ② 高频建议（库自己长大）
-                List<Suggestion> suggs = History.CollectSuggestions(
-                    History.ReadLines(History.DefaultPath()), cards, 3, 3);
-                for (int i = 0; i < suggs.Count; i++)
-                {
-                    if (rows.Count >= 2) break;
-                    rows.Add(MakeAction(RowType.Suggest, suggs[i].Body,
-                        "常敲未入库", "×" + suggs[i].Freq));
-                }
-            }
-
-            // ③ 再来一次（排序结果）：首屏只放 6 条（一眼认出即走）；
-            // 有输入 = 用户在找 → 放开上限，全部匹配可滚动
             bool browsing = q.Length > 0;
+
+            // ③ 再来一次（排序结果）放最上：首屏 ≤6 一眼即走；有输入放开全部匹配可滚动
             int shown = 0;
             for (int i = 0; i < cards.Count && (browsing || shown < 6); i++)
             {
@@ -1111,15 +1317,44 @@ namespace CommandPocketPilot
                 shown++;
             }
 
-            if (q.Length > 0 && shown == 0)
+            // action 行（粘贴即存/高频建议）排在卡区下方：不抢占首卡、↓ 不误触、识别不打扰
+            if (!browsing)
+            {
+                if (store.ReadSettingClipPeek() && clipOffer.Length > 0 && clipOffer != offeredClip)
+                {
+                    offeredClip = clipOffer;
+                    rows.Add(MakeAction(RowType.ClipSave, clipOffer, "剪贴板·回车即存", ""));
+                }
+                for (int i = 0; i < suggestSnapshot.Count && i < 2; i++)
+                    rows.Add(MakeAction(RowType.Suggest, suggestSnapshot[i].Body, "常敲未入库", "×" + suggestSnapshot[i].Freq));
+            }
+
+            if (browsing && shown == 0)
                 rows.Add(new Row { Type = RowType.Empty, Badge = "没有这张卡 — 去问 AI 或搜一下吧（Esc 收起）", Sub = "" });
-            else if (q.Length == 0 && cards.Count == 0)
+            else if (!browsing && cards.Count == 0)
                 rows.Add(new Row { Type = RowType.Empty, Badge = "空库：按 + 记一条，或托盘菜单「导入终端历史」", Sub = "" });
 
             RenderRows();
+        }
 
-            int[] today = store.CountToday();
-            status.Text = "今日: 取 " + today[0] + " · 存 " + today[1] + "    |    回车=复制 · Esc=收起";
+        private void UpdateStatus()
+        {
+            int[] today = todayCount;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("今日: 取 ").Append(today[0]).Append(" · 存 ").Append(today[1]);
+            sb.Append("    |    回车=复制 · Esc=收起");
+            if (list.SelectedItems.Count > 0 && list.SelectedItems[0].Tag != null)
+            {
+                Row r = (Row)list.SelectedItems[0].Tag;
+                if (r.Type == RowType.Card && r.Card != null)
+                {
+                    if (r.Card.Purpose != null && r.Card.Purpose.Length > 0)
+                        sb.Append("    |    ").Append(Cards.Truncate(r.Card.Purpose, 26));
+                    if (r.Danger)
+                        sb.Append("    ⚠ 危险");
+                }
+            }
+            status.Text = sb.ToString();
         }
 
         private bool ExistsInLibrary(string body)
@@ -1158,12 +1393,12 @@ namespace CommandPocketPilot
             Row r = new Row();
             r.Type = RowType.Card;
             r.Card = c;
-            r.Danger = c.Risk == "high" || c.Risk == "critical";
+            r.Danger = Cards.IsDanger(c);   // 存储 risk 或现行规则命中任一即红（旧库缺省 low 的危险卡也拦）
             string when = "";
             if (c.LastUsedAt != DateTime.MinValue)
                 when = FriendlyTime(c.LastUsedAt);
             string copies = c.CopyCount > 0 ? " · ×" + c.CopyCount : "";
-            r.Sub = when + copies;
+            r.Sub = (r.Danger ? "⚠危险" + (when.Length == 0 ? "" : " · ") : "") + when + copies;
             return r;
         }
 
@@ -1172,6 +1407,7 @@ namespace CommandPocketPilot
             DateTime now = DateTime.Now;
             if (t.Date == now.Date) return "上次:今天 " + t.ToString("HH:mm");
             if (t.Date == now.Date.AddDays(-1)) return "上次:昨天";
+            if (t.Year != now.Year) return "上次:" + t.ToString("yyyy-MM-dd");
             return "上次:" + t.ToString("MM-dd");
         }
 
@@ -1199,7 +1435,7 @@ namespace CommandPocketPilot
                 list.Items.Add(item);
             }
             list.EndUpdate();
-            // 默认选中第一个 Card 行（"再来一次"主路径）；ClipSave/Suggest 行需 ↓ 后回车，杜绝误存
+            // 默认选中第一个 Card 行（"再来一次"主路径；卡区在顶）
             int first = 0;
             for (int i = 0; i < list.Items.Count; i++)
             {
@@ -1211,6 +1447,7 @@ namespace CommandPocketPilot
                 list.Items[first].Selected = true;
                 list.Items[first].Focused = true;
             }
+            UpdateStatus();
         }
 
         private void DrawRow(object sender, DrawListViewSubItemEventArgs e)
@@ -1245,7 +1482,9 @@ namespace CommandPocketPilot
                 string metaText = (r.Type == RowType.Card)
                     ? r.Sub
                     : (r.Badge + (r.Sub.Length == 0 ? "" : "  " + r.Sub));
-                Color metaColor = r.Type == RowType.Card ? Ui.Muted : Ui.Warn;
+                Color metaColor = Ui.Muted;
+                if (r.Type == RowType.Card && r.Danger) metaColor = Ui.Danger;
+                else if (r.Type != RowType.Card) metaColor = Ui.Warn;
                 TextRenderer.DrawText(e.Graphics, metaText, FSmall, meta, metaColor,
                     TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
                 return;
@@ -1276,9 +1515,17 @@ namespace CommandPocketPilot
         private static readonly SolidBrush BAccent = new SolidBrush(Ui.Accent);
 
         // ============================================================ 交互
+        // 收起即回归首屏：清空过滤词（防下回唤出还是旧过滤短列表）
+        private void HideWindow()
+        {
+            if (search.Text != null && search.Text.Length > 0)
+                search.Clear();
+            Hide();
+        }
+
         private void OnSearchKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape) { Hide(); store.Metric("esc", ""); }
+            if (e.KeyCode == Keys.Escape) { HideWindow(); store.Metric("esc", ""); }
             else if (e.KeyCode == Keys.Enter)
             {
                 e.SuppressKeyPress = true;
@@ -1289,7 +1536,7 @@ namespace CommandPocketPilot
                 if (list.Items.Count > 0)
                 {
                     list.Focus();
-                    list.Items[0].Selected = true;
+                    list.Items[0].Selected = true;   // 卡区在顶，首项=置顶卡
                 }
                 e.Handled = true;
             }
@@ -1297,7 +1544,7 @@ namespace CommandPocketPilot
 
         private void OnListKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape) { Hide(); store.Metric("esc", ""); }
+            if (e.KeyCode == Keys.Escape) { HideWindow(); store.Metric("esc", ""); }
             else if (e.KeyCode == Keys.Enter)
             {
                 e.SuppressKeyPress = true;
@@ -1309,14 +1556,14 @@ namespace CommandPocketPilot
         {
             if (list.SelectedItems.Count == 0) return;
             Row r = (Row)list.SelectedItems[0].Tag;
-            if (r.Type == RowType.Empty) { Hide(); return; }
+            if (r.Type == RowType.Empty) { HideWindow(); return; }
 
             if (r.Type == RowType.ClipSave || r.Type == RowType.Suggest)
             {
                 bool fromClip = r.Type == RowType.ClipSave;
-                store.Upsert(Cards.New(r.ActionBody, fromClip ? "clipboard" : "history"));
+                store.Upsert(Cards.New(r.ActionBody, fromClip ? "clipboard" : "history", true));
                 store.Metric(fromClip ? "save" : "adopt", fromClip ? "clip" : "suggest");
-                Reload();
+                HideWindow();   // 存完即隐，不留在窗内防惯性再回车误复制顶卡
                 return;
             }
             // Card：危险先确认，再复制
@@ -1341,7 +1588,7 @@ namespace CommandPocketPilot
             }
             store.BumpCopy(r.Card);
             store.Metric("copy", "enter");
-            Hide();
+            HideWindow();
         }
 
         private void AddManual()
@@ -1351,7 +1598,7 @@ namespace CommandPocketPilot
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
                 string body = dlg.BodyText.Trim();
                 if (body.Length == 0) return;
-                Card c = Cards.New(body, "manual");
+                Card c = Cards.New(body, "manual", true);
                 c.Purpose = dlg.NoteText.Trim();
                 store.Upsert(c);
                 store.Metric("save", "manual");
@@ -1380,7 +1627,7 @@ namespace CommandPocketPilot
             Text = "记一条";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(460, 190);
+            ClientSize = new Size(460, 214);
             BackColor = Ui.Chrome;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -1417,9 +1664,17 @@ namespace CommandPocketPilot
             noteBox.BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(noteBox);
 
+            Label hint = new Label();
+            hint.Text = "危险将自动判红（rm -rf / 强推等），复制前会确认一次。来源=手动。";
+            hint.ForeColor = Ui.Muted;
+            hint.Font = new Font("Microsoft YaHei UI", 8.5F);
+            hint.Location = new Point(14, 152);
+            hint.AutoSize = true;
+            Controls.Add(hint);
+
             Button ok = new Button();
             ok.Text = "存";
-            ok.Location = new Point(280, 158);
+            ok.Location = new Point(280, 180);
             ok.Size = new Size(80, 26);
             ok.DialogResult = DialogResult.OK;
             ok.BackColor = Ui.AccentDim;
@@ -1429,7 +1684,7 @@ namespace CommandPocketPilot
 
             Button cancel = new Button();
             cancel.Text = "取消";
-            cancel.Location = new Point(368, 158);
+            cancel.Location = new Point(368, 180);
             cancel.Size = new Size(80, 26);
             cancel.DialogResult = DialogResult.Cancel;
             cancel.BackColor = Ui.Input;
@@ -1462,7 +1717,7 @@ namespace CommandPocketPilot
         private static int RunCore()
         {
             // 1) jsonl 往返 + 特殊字符
-            Card c = Cards.New("git commit -m \"x\\y\"\n第二行\t带tab", "test");
+            Card c = Cards.New("git commit -m \"x\\y\"\n第二行\t带tab", "test", true);
             c.Purpose = "提交 中文";
             c.CopyCount = 3;
             c.LastUsedAt = new DateTime(2026, 9, 1, 10, 0, 0);
@@ -1504,11 +1759,11 @@ namespace CommandPocketPilot
             if (Rules.IsCommandish(new string('a', 900))) return Fail("shape too long");
 
             // 6) 排序：最近用过在前，置顶 1
-            Card old = Cards.New("old cmd", "t");
+            Card old = Cards.New("old cmd", "t", true);
             old.LastUsedAt = new DateTime(2026, 1, 1);
-            Card nowCard = Cards.New("now cmd", "t");
+            Card nowCard = Cards.New("now cmd", "t", true);
             nowCard.LastUsedAt = DateTime.Now;
-            Card never = Cards.New("never cmd", "t");
+            Card never = Cards.New("never cmd", "t", true);
             never.LastUsedAt = DateTime.MinValue;
             never.CreatedAt = new DateTime(2025, 1, 1);
             List<Card> all = new List<Card> { old, never, nowCard };
@@ -1528,7 +1783,7 @@ namespace CommandPocketPilot
                 "cat ~/.aws/credentials",   // 敏感：剔除
                 "npm run dev" };
             List<Card> lib = new List<Card>();
-            lib.Add(Cards.New("npm run dev", "history"));
+            lib.Add(Cards.New("npm run dev", "history", true));
             List<Suggestion> sug = History.CollectSuggestions(hist, lib, 3, 3);
             if (sug.Count != 1) return Fail("suggest count=" + sug.Count);
             if (!sug[0].Body.Contains("ssh deploy")) return Fail("suggest top");
@@ -1541,6 +1796,27 @@ namespace CommandPocketPilot
             File.Delete(p);
             if (histLines == null || histLines.Count != 2) return Fail("history utf16 decode");
             if (histLines[1] != "cmd two") return Fail("history content");
+
+            // 9) 危险门实时判定：旧卡缺省 risk=low 但正文命中现行规则 → 仍拦
+            Card dangerStale = Cards.New("rm -rf /tmp/x", "t", true);
+            dangerStale.Risk = "low";
+            if (!Cards.IsDanger(dangerStale)) return Fail("IsDanger should catch stale low-risk rm -rf");
+            if (Cards.IsDanger(Cards.New("netstat -ano", "t", true))) return Fail("IsDanger netstat false positive");
+
+            // 10) 建议保留原始大小写（命令原样入库/展示）
+            List<string> mixedHist = new List<string> {
+                "Git Status", "Git Status", "Git Status",
+                "git log --oneline" };
+            List<Suggestion> mixed = History.CollectSuggestions(mixedHist, new List<Card>(), 3, 3);
+            if (mixed.Count != 1) return Fail("suggest original-case count=" + mixed.Count);
+            if (mixed[0].Body != "Git Status") return Fail("suggest original-case body=" + mixed[0].Body);
+
+            // 11) 建议同频稳定：最近出现者优先
+            List<string> tieHist = new List<string> {
+                "bolder cmd", "bolder cmd", "newer cmd", "newer cmd" };
+            List<Suggestion> tie = History.CollectSuggestions(tieHist, new List<Card>(), 3, 2);
+            if (tie.Count != 2) return Fail("suggest tie count=" + tie.Count);
+            if (tie[0].Body != "newer cmd") return Fail("suggest tie newest-first body=" + tie[0].Body);
 
             Console.WriteLine("SELFTEST PASS (v5-pilot)");
             return 0;

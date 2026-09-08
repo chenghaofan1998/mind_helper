@@ -60,13 +60,15 @@ function isCommandish(text) {
   return true;
 }
 
-// ---------- 复刻排序语义 CompareRecent ----------
+// ---------- 复刻排序语义 CompareRecent（含 UpdatedAt 第三键） ----------
 function tsOf(c) { return c.lastUsedAt || c.createdAt || 0; }
 function compareRecent(a, b) {
   const ta = tsOf(a), tb = tsOf(b);
   if (tb !== ta) return tb - ta;
   const ca = a.copies || 0, cb = b.copies || 0;
   if (cb !== ca) return cb - ca;
+  const ua = a.updatedAt || 0, ub = b.updatedAt || 0;
+  if (ub !== ua) return ub - ua;
   return String(a.title).localeCompare(String(b.title));
 }
 
@@ -79,8 +81,10 @@ function collectSuggestions(historyLines, existing, topN, minFreq) {
   for (const c of existing) inLib.add(bodyKey(c.body));
   const count = new Map();
   const lastSeen = new Map();
+  const lastIdx = new Map();
   const order = [];
-  for (const raw of historyLines) {
+  for (let i = 0; i < historyLines.length; i++) {
+    const raw = historyLines[i];
     if (isSensitive(raw)) continue;
     const key = bodyKey(raw);
     if (!key) continue;
@@ -88,8 +92,13 @@ function collectSuggestions(historyLines, existing, topN, minFreq) {
     if (!count.has(key)) order.push(key);
     count.set(key, (count.get(key) || 0) + 1);
     lastSeen.set(key, raw);
+    lastIdx.set(key, i);
   }
-  order.sort((a, b) => count.get(b) - count.get(a));
+  order.sort((a, b) => {
+    const ca = count.get(a), cb = count.get(b);
+    if (cb !== ca) return cb - ca;
+    return lastIdx.get(b) - lastIdx.get(a);
+  });
   for (const k of order) {
     if (result.length >= topN) break;
     if (count.get(k) >= minFreq) result.push({ body: lastSeen.get(k), freq: count.get(k) });
@@ -160,6 +169,14 @@ const sug2 = collectSuggestions(hist, emptyLib, 3, 3);
 ok(sug2.length === 2, 'empty lib: ssh+npm both freq>=3 -> 2, got ' + sug2.length);
 const sug3 = collectSuggestions(hist, lib, 3, 5);
 ok(sug3.length === 0, 'minFreq 5 -> none');
+
+console.log('== 原始大小写 + 同频稳定 ==');
+const mixed = collectSuggestions(['Git Status', 'Git Status', 'Git Status', 'git log --oneline'], [], 3, 3);
+ok(mixed.length === 1 && mixed[0].body === 'Git Status', 'original case preserved: ' + (mixed[0] && mixed[0].body));
+const tie = collectSuggestions(['bolder cmd', 'bolder cmd', 'newer cmd', 'newer cmd'], [], 3, 2);
+ok(tie.length === 2 && tie[0].body === 'newer cmd', 'tie newest-first: ' + (tie[0] && tie[0].body));
+const danger = s => { let b = s.toLowerCase(); return ['rm -rf','rm -r','rm -fr','rm -f -r','remove-item -recurse','remove-item -r','format c:','format d:','format /fs','format-volume','diskpart','dd if=','git push -f','git push --force','git push --force-with-lease','drop table','drop database','truncate table','truncate database','rd /s','del /s /q','reset --hard'].some(n => b.includes(n)) ? 'high' : 'low'; };
+ok(danger('rm -rf /tmp/x') === 'high' && danger('netstat -ano') === 'low', 'danger needle parity');
 
 console.log('');
 if (failures === 0) { console.log('ALL GREEN'); process.exit(0); }
