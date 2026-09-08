@@ -1107,6 +1107,7 @@ namespace CommandPocketPilot
         private List<Card> cards = new List<Card>();
         private List<Row> rows = new List<Row>();
         private List<Suggestion> suggestSnapshot = new List<Suggestion>();
+        private int cardCount = 0;
         private int[] todayCount = new int[] { 0, 0 };
         private string clipOffer = "";          // 本次唤出读到的候选剪贴板文本
         private string offeredClip = "";   // 本会话已 offer 过的剪贴板文本（同文本不重复打扰）
@@ -1195,7 +1196,9 @@ namespace CommandPocketPilot
             status.ForeColor = Ui.Muted;
             status.Font = new Font("Microsoft YaHei UI", 8.5F);
             status.Location = new Point(14, 328);
-            status.AutoSize = true;
+            status.AutoSize = false;
+            status.Size = new Size(492, 20);
+            status.AutoEllipsis = true;
             Controls.Add(status);
 
             search.KeyDown += OnSearchKeyDown;
@@ -1278,6 +1281,7 @@ namespace CommandPocketPilot
         {
             cards = store.LoadCards();
             cards.Sort(Rules.CompareRecent);
+            cardCount = cards.Count;
             BuildSnapshots();
             RefreshRows();
         }
@@ -1341,8 +1345,10 @@ namespace CommandPocketPilot
         {
             int[] today = todayCount;
             StringBuilder sb = new StringBuilder();
-            sb.Append("今日: 取 ").Append(today[0]).Append(" · 存 ").Append(today[1]);
+            sb.Append("库 ").Append(cardCount).Append(" 条 · 今日: 取 ").Append(today[0]).Append(" · 存 ").Append(today[1]);
             sb.Append("    |    回车=复制 · Esc=收起");
+            if (cardCount > 6 && (search.Text == null || search.Text.Trim().Length == 0))
+                sb.Append("    输入关键字可浏览全部");
             if (list.SelectedItems.Count > 0 && list.SelectedItems[0].Tag != null)
             {
                 Row r = (Row)list.SelectedItems[0].Tag;
@@ -1561,9 +1567,10 @@ namespace CommandPocketPilot
             if (r.Type == RowType.ClipSave || r.Type == RowType.Suggest)
             {
                 bool fromClip = r.Type == RowType.ClipSave;
-                store.Upsert(Cards.New(r.ActionBody, fromClip ? "clipboard" : "history", true));
+                bool added = store.Upsert(Cards.New(r.ActionBody, fromClip ? "clipboard" : "history", true));
                 store.Metric(fromClip ? "save" : "adopt", fromClip ? "clip" : "suggest");
-                HideWindow();   // 存完即隐，不留在窗内防惯性再回车误复制顶卡
+                // 存后停留并刷新：新卡按"刚用"置顶成默认选中=可见确认；建议行消失；Esc 收起
+                Reload();
                 return;
             }
             // Card：危险先确认，再复制
