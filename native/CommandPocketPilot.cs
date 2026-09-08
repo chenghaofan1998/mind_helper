@@ -846,7 +846,7 @@ namespace CommandPocketPilot
         // 多源导入（取最后写入者）：频次 Top-N 去重入库，保留原始大小写；新卡不伪造“用过”时间。返回给用户看的摘要。
         public string ImportHistory(int topN)
         {
-            History.SourceInfo src = History.BestSource();
+            SourceInfo src = History.BestSource();
             if (src == null)
                 return "未找到可读终端历史。已检查：\r\n\r\n" + CandidateListText();
             List<string> lines = History.ReadLines(src.Path);
@@ -890,7 +890,7 @@ namespace CommandPocketPilot
 
         private string CandidateListText()
         {
-            History.SourceInfo best = History.BestSource();
+            SourceInfo best = History.BestSource();
             string ps = History.DefaultPath();
             string home = Environment.GetEnvironmentVariable("USERPROFILE");
             string bash = String.IsNullOrEmpty(home) ? null : Path.Combine(home, ".bash_history");
@@ -1046,7 +1046,7 @@ namespace CommandPocketPilot
         {
             if (store.ReadFlag("importask")) return;
             if (store.CountCards() > 0) return;
-            History.SourceInfo src = History.BestSource();
+            SourceInfo src = History.BestSource();
             if (src == null) return;
             DialogResult r = MessageBox.Show(
                 "库里还没有命令。最近写入的终端历史（" + src.Modified.ToString("MM-dd HH:mm") + "）可导入：\r\n\r\n" +
@@ -1296,7 +1296,7 @@ namespace CommandPocketPilot
                     clipOffer = clip;
                 store.Metric("peek", "clip"); // 读取审计流水（不含内容）
             }
-            History.SourceInfo src = History.BestSource();
+            SourceInfo src = History.BestSource();
             if (src != null)
                 suggestSnapshot = History.CollectSuggestions(History.ReadLines(src.Path), cards, 3, 3);
         }
