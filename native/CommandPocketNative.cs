@@ -763,6 +763,8 @@ namespace CommandPocketNative
             CommandCard card = SelectedCard();
             if (card == null)
                 return;
+            if (!DangerGuard.ConfirmCopy(this, card))
+                return;
             Clipboard.SetText(card.Body);
             card.CopyCount++;
             card.LastUsedAt = DateTime.Now;
@@ -1413,7 +1415,7 @@ namespace CommandPocketNative
             AddEditorRow(panel, editorDesc, "何时用（一句话）");
             AddEditorRow(panel, editorBody, "正文（命令 / 提示词 / 文本）");
             AddEditorRow(panel, editorFav, null);
-            AddEditorRow(panel, editorRisk, "风险（仅自标，不影响复制）");
+            AddEditorRow(panel, editorRisk, "风险（高/极高复制前会确认）");
             AddEditorRow(panel, editorKind, "类型");
             AddEditorRow(panel, editorProduct, "产品");
             AddEditorRow(panel, editorAliases, "别名（逗号分隔，供中英检索）");
@@ -1589,6 +1591,8 @@ namespace CommandPocketNative
         {
             CommandCard card = SelectedLibraryCard();
             if (card == null)
+                return;
+            if (!DangerGuard.ConfirmCopy(this, card))
                 return;
             Clipboard.SetText(card.Body);
             card.CopyCount++;
@@ -1946,6 +1950,11 @@ namespace CommandPocketNative
         public string Tags;           // 逗号分隔
         public string Source;         // 来源 URL / 文件 / 粘贴
         public string Risk;           // low|medium|high|critical
+        public string Purpose;        // 目的句（“我刚用它干什么”的原话，检索钥匙）
+        public string RiskScope;      // 风险明细·动什么：本机/项目/全局/文件
+        public string RiskMutation;   // 风险明细·改删什么：覆盖/删除/不可逆/无
+        public string RiskRevert;     // 风险明细·能否还原：yes/no/unknown
+        public bool RiskLabeled;      // 是否人工标注过风险(false=未标注→展示按黄)
         public bool IsFavorite;
         public int Heat;              // 主流热度 seed 0..5（预置，不随用户数据变）
         public int CopyCount;         // 个人复制次数（个人频率信号）
@@ -1971,6 +1980,11 @@ namespace CommandPocketNative
                 Tags = JoinTokens(tagTokens, CommandClassifier.Domain(body)),
                 Source = source,
                 Risk = "low",
+                Purpose = "",
+                RiskScope = "",
+                RiskMutation = "",
+                RiskRevert = "unknown",
+                RiskLabeled = false,
                 IsFavorite = false,
                 Heat = 0,
                 CopyCount = 0,
@@ -1995,6 +2009,11 @@ namespace CommandPocketNative
                 Tags = kind,
                 Source = source,
                 Risk = kind == KindWarning ? "medium" : "low",
+                Purpose = "",
+                RiskScope = "",
+                RiskMutation = "",
+                RiskRevert = "unknown",
+                RiskLabeled = false,
                 IsFavorite = false,
                 Heat = 0,
                 CopyCount = 0,
@@ -2530,6 +2549,10 @@ namespace CommandPocketNative
                     if (Normalize(aliases[j]) == term || aliases[j] == term)
                         score += 15;
                 }
+                if (Normalize(card.Purpose).Contains(term))
+                    score += 14; // 目的句(原话)命中：权重 ≥ 标题
+                if (Normalize(card.Title).Contains(term))
+                    score += 12; // 标题单独命中
             }
             for (int i = 0; i < TermMap.Length; i++)
             {
@@ -2555,7 +2578,7 @@ namespace CommandPocketNative
 
         private static string SearchPool(CommandCard card)
         {
-            return Normalize(card.Title + " " + card.Aliases + " " + card.Body + " " + card.Desc + " " + card.Tags + " " + card.Product + " " + card.Source);
+            return Normalize(card.Title + " " + card.Aliases + " " + card.Body + " " + card.Desc + " " + card.Tags + " " + card.Product + " " + card.Source + " " + card.Purpose);
         }
 
         private static bool ContainsAny(string text, string[] tokens)
@@ -2638,6 +2661,23 @@ namespace CommandPocketNative
             if (Regex.IsMatch(body, "^(SELECT|INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE)\\s+", RegexOptions.IgnoreCase))
                 return "数据库操作命令。";
             return "从导入资料中抽取的可复制指令。";
+        }
+    }
+
+    internal static class DangerGuard
+    {
+        // 高风险复制确认（粘贴/执行前再看一眼）；high/critical 才拦截
+        public static bool ConfirmCopy(IWin32Window owner, CommandCard card)
+        {
+            if (card.Risk != "high" && card.Risk != "critical")
+                return true;
+            DialogResult result = MessageBox.Show(owner,
+                "这是一条高风险内容，粘贴/执行前请再确认一次：\r\n\r\n" + card.Body +
+                "\r\n\r\n是否仍要复制？",
+                "Command Pocket · 风险确认",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            return result == DialogResult.Yes;
         }
     }
 
@@ -3218,7 +3258,12 @@ namespace CommandPocketNative
             Field(sb, "tags", c.Tags);
             Field(sb, "source", c.Source);
             Field(sb, "risk", c.Risk);
-            sb.Append("\"fav\":").Append(c.IsFavorite ? "true" : "false").Append(',');
+            Field(sb, "purpose", c.Purpose);
+            Field(sb, "rs", c.RiskScope);
+            Field(sb, "rm", c.RiskMutation);
+            Field(sb, "rr", c.RiskRevert);
+            sb.Append(",\"fav\":").Append(c.IsFavorite ? "true" : "false").Append(',');
+            sb.Append("\"rlabeled\":").Append(c.RiskLabeled ? "true" : "false").Append(',');
             sb.Append("\"heat\":").Append(c.Heat).Append(',');
             sb.Append("\"copies\":").Append(c.CopyCount).Append(',');
             Field(sb, "used", c.LastUsedAt.ToString(TimeFormat, System.Globalization.CultureInfo.InvariantCulture));
@@ -3294,6 +3339,15 @@ namespace CommandPocketNative
                     else if (key == "tags") c.Tags = value;
                     else if (key == "source") c.Source = value;
                     else if (key == "risk") c.Risk = value;
+                    else if (key == "purpose") c.Purpose = value;
+                    else if (key == "rs") c.RiskScope = value;
+                    else if (key == "rm") c.RiskMutation = value;
+                    else if (key == "rr") c.RiskRevert = value;
+                    else if (key == "rlabeled")
+                    {
+                        c.RiskLabeled = StartsWith(line, pos, "true");
+                        pos += c.RiskLabeled ? 4 : 5;
+                    }
                     else if (key == "fav")
                     {
                         c.IsFavorite = StartsWith(line, pos, "true");
@@ -3304,6 +3358,14 @@ namespace CommandPocketNative
                     else if (key == "used") c.LastUsedAt = ParseTime(value);
                     else if (key == "created") c.CreatedAt = ParseTime(value);
                     else if (key == "updated") c.UpdatedAt = ParseTime(value);
+                    else
+                    {
+                        // 未知 key：宽容跳过（字符串值消费整串；裸值跳到分隔符）
+                        if (ch == '"')
+                            ReadJsonString(line, ref pos);
+                        else
+                            SkipRawValue(line, ref pos);
+                    }
                     SkipWs(line, ref pos);
                     if (pos < line.Length && line[pos] == ',')
                         pos++;
@@ -3313,6 +3375,10 @@ namespace CommandPocketNative
                 if (c.Product == null) c.Product = "Personal";
                 if (c.Kind == null) c.Kind = CommandCard.KindCommand;
                 if (c.Risk == null) c.Risk = "low";
+                if (c.Purpose == null) c.Purpose = "";
+                if (c.RiskScope == null) c.RiskScope = "";
+                if (c.RiskMutation == null) c.RiskMutation = "";
+                if (c.RiskRevert == null || c.RiskRevert == "") c.RiskRevert = "unknown";
                 if (c.LastUsedAt == DateTime.MinValue) c.LastUsedAt = c.UpdatedAt;
                 if (c.CreatedAt == DateTime.MinValue) c.CreatedAt = DateTime.Now;
                 if (c.UpdatedAt == DateTime.MinValue) c.UpdatedAt = DateTime.Now;
@@ -3330,6 +3396,12 @@ namespace CommandPocketNative
             if (DateTime.TryParseExact(value, TimeFormat, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out result))
                 return result;
             return DateTime.MinValue;
+        }
+
+        private static void SkipRawValue(string line, ref int pos)
+        {
+            while (pos < line.Length && line[pos] != ',' && line[pos] != '}')
+                pos++;
         }
 
         private static void SkipWs(string line, ref int pos)
