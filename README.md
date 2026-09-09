@@ -3,11 +3,14 @@
 本地优先的个人"行动记忆口袋"：Windows 托盘常驻 + 全局热键（`Ctrl+Alt+P`）小窗。
 **v5-pilot 定位**：行为记忆"再来一次"——不让你想起、不让你搜索，把你上次干成过的命令在按热键的 3 秒内送到手边，回车复制走人。
 
+> 战略演进：Command Pocket 现作为 **Action Pocket（指导性文本行动层）** 的早期验证资产；新方向、产品边界和验证纪律见 `docs/ACTION-POCKET-CHARTER.md`。
+
 ## 权威文档（按优先级）
 
 | 文档 | 角色 |
 |---|---|
-| `docs/v5pilot/SPEC.md` | **v5-pilot 试点规格 · 试点期唯一执行依据**（定位/场景/功能 F1-F10/合规红线/生死线） |
+| `docs/ACTION-POCKET-CHARTER.md` | **Action Pocket 战略纲领**（长期定位、场景边界、实施路径与验证纪律） |
+| `docs/v5pilot/SPEC.md` | Command Pocket v5-pilot 试点规格（现作为早期验证资产的执行依据） |
 | `docs/relook/DECISION.md` | v4 战略打回决议 + 四路重想终裁（为什么是"行为记忆"而不是"命令抽屉"） |
 | `docs/relook/` | 打回决议与四路提案（A 止损 / B 钉子 / C 场景 / D 市场实证）——决策链存档 |
 
@@ -21,7 +24,7 @@ native/                 主交付源码（C# WinForms）
   CommandPocketNative.cs  v4 旧版（已退役，留在 git 历史可回退）
   build.ps1              编译 + 自测（只用 Windows 自带 csc.exe，无第三方依赖）
 scripts/                打包脚本
-docs/                   文档（v5pilot 规格 + relook 决策链）
+docs/                   文档（Action Pocket 纲领 + v5pilot 规格 + relook 决策链）
 src/                    备用 Web 原型（Neutralino，仅界面实验，非主交付）
 dist/CommandPocketNative/   旧版现役 exe（v4 时代，待 v5-pilot 替换）
 dist-native/                npm run desktop 的开发构建输出
