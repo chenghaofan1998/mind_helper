@@ -12,7 +12,9 @@
     "desktop:package": "npm run desktop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-native-release.ps1",
     "desktop:web-package": "npm run build && neu build --release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-release.ps1",
     "neutralino:update": "neu update",
-    "desktop:pilot": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1 -Name CommandPocketPilot"
+    "desktop:pilot": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1 -Name CommandPocketPilot",
+    "ap:test": "tsc -p actionpocket/tsconfig.json && node --test \"actionpocket/dist/test/*.test.js\"",
+    "ap:simulate": "tsc -p actionpocket/tsconfig.json && node actionpocket/dist/scripts/simulate-pilot.js"
   },
   "dependencies": {},
   "devDependencies": {

@@ -8,3 +8,5 @@ Thumbs.db
 # 构建产物（本地输出，Windows 侧 npm run desktop:pilot 生成）
 dist/
 dist-native/
+
+.ap-data/
