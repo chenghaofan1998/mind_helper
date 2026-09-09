@@ -13,6 +13,7 @@
 | `docs/v5pilot/SPEC.md` | Command Pocket v5-pilot 试点规格（现作为早期验证资产的执行依据） |
 | `docs/relook/DECISION.md` | v4 战略打回决议 + 四路重想终裁（为什么是"行为记忆"而不是"命令抽屉"） |
 | `docs/relook/` | 打回决议与四路提案（A 止损 / B 钉子 / C 场景 / D 市场实证）——决策链存档 |
+| `docs/actionpocket/` | **Action Pocket 阶段 1 模拟试点**（产品设计 / 架构 / 模拟五团队 / 模拟试点报告）——机制验证，非真实市场证据 |
 
 > 历史规格（v2 MASTER/MVP、v3 VISION/SCENARIO、v4 PRODUCT/REQUIREMENTS/TESTCASES/ACCEPTANCE 等）已删除——产品方向经 v4 打回后已换代，旧文档不再适用。全部历史仍可在 **git 历史**中追溯（`git log -- docs/`）。
 
@@ -26,6 +27,7 @@ native/                 主交付源码（C# WinForms）
 scripts/                打包脚本
 docs/                   文档（Action Pocket 纲领 + v5pilot 规格 + relook 决策链）
 src/                    备用 Web 原型（Neutralino，仅界面实验，非主交付）
+actionpocket/            Action Pocket 阶段 1 可运行原型（TS，机制验证用，非最终交付；含 CLI/测试/模拟 Runbook）
 dist/CommandPocketNative/   旧版现役 exe（v4 时代，待 v5-pilot 替换）
 dist-native/                npm run desktop 的开发构建输出
 ```
@@ -46,6 +48,18 @@ npm run desktop:package
 ```
 
 > `desktop:web*` 系列需要 node_modules（npm install），仅供备用 Web 原型实验。
+
+## Action Pocket 阶段 1 原型（本分支新增）
+
+> 因无 5 个真实设计合作团队，按发起人指示以 5 个**模拟团队**驱动完整操作流，见 `docs/actionpocket/`。
+> 声明：模拟试点数据不构成产品成立证据；真实阶段 0 仍待补齐。
+
+```bash
+npm run ap:test        # TS 编译 + 单元/集成/五队端到端测试（20 项）
+npm run ap:simulate    # 模拟试点执行器：5 队完整旅程 + 指标表
+```
+
+落地形态：`actionpocket/src`（types/risk/markdown/draft/store/engine/cli）。Windows/.NET 交付映射见 `docs/actionpocket/02-architecture.md` ADR-1。
 
 ## 当前状态
 
