@@ -8,8 +8,23 @@ test('rm -rf / rm -fr 判为高风险', () => {
   assert.ok(isDangerous(classifyRisk('rm -rf /srv/shop')));
 });
 
+test('递归删除的等价写法均判高（对齐 pilot 基线）', () => {
+  for (const c of ['rm -r /srv/old', 'rm -f -r /data/x', 'rm -r -f /data/x', 'rm -Rf /x', 'rm -r /tmp && npm i', 'rm --recursive /x']) {
+    assert.ok(isDangerous(classifyRisk(c)), `应为高/临界: ${c}`);
+  }
+  assert.equal(classifyRisk('rm -d emptydir'), 'low', 'rm -d 仅删空目录');
+});
+
+test('磁盘/卷级破坏判为临界（对齐 pilot）', () => {
+  for (const c of ['format c:', 'format d: /q', 'format volume E', 'dd if=/dev/zero of=/dev/sdb bs=4M', 'diskpart', 'format-volume D:']) {
+    assert.equal(classifyRisk(c), 'critical', c);
+  }
+  assert.ok(isDangerous(classifyRisk('rd /s /q C:\\old')), 'rd /s');
+});
+
 test('rm -f 单文件保持 low', () => {
   assert.equal(classifyRisk('rm -f temp.log'), 'low');
+  assert.equal(classifyRisk('rm file.txt'), 'low');
 });
 
 test('git reset --hard / push --force 高风险', () => {

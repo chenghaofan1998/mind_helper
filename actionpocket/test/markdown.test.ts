@@ -51,6 +51,28 @@ test('C iOS：参数表 + 占位符 + 敏感参数', () => {
   assert.ok(d.verifications.length >= 3);
 });
 
+test('中文密钥 key 与“敏感”列也判为敏感参数', () => {
+  const text = [
+    '# 发布',
+    '## 参数',
+    '| 参数 | 说明 | 敏感 | 必填 |',
+    '|---|---|---|---|',
+    '| 部署口令 | 跳板机口令 | 是 | 是 |',
+    '| 版本号 | 发版版本 | 否 | 是 |',
+    '| access_token | OAuth | 是 | 是 |',
+    '## 步骤',
+    '1. 使用口令登录',
+    '```bash',
+    'echo {{部署口令}} | ssh deploy@host',
+    '```',
+  ].join('\n');
+  const d = parseMarkdown(text, '/tmp/zh-secret.md');
+  const p = new Map(d.params.map((x) => [x.key, x]));
+  assert.equal(p.get('部署口令')?.sensitive, true, '中文“部署口令”应敏感');
+  assert.equal(p.get('版本号')?.sensitive, false, '“版本号”不应敏感');
+  assert.equal(p.get('access_token')?.sensitive, true);
+});
+
 test('D 数据库变更：高危命令逐条携带风险', () => {
   const d = parse('D-db');
   assert.equal(d.steps.length, 5);

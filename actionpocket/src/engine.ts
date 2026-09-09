@@ -48,11 +48,58 @@ function currentHashOf(card: ActionCard): string | null {
   return fileHash(card.source.path);
 }
 
-function ensureSourceCurrent(card: ActionCard): void {
+function ensureSourceCurrent(card: ActionCard, s: Store): void {
   const h = currentHashOf(card);
-  if (h !== card.source.hash) {
+  if (h === card.source.hash) return;
+  if (card.status === 'active') {
+    card.status = 'stale';
+    card.updatedAt = nowIso();
+    s.saveCard(card);
+    event(s, 'card_stale', card.id, undefined, `source=${card.source.path}`);
+  }
+  throw new EngineError(
+    `源文件已变化或缺失（${card.source.path}），卡片已置为过期，需文档拥有者重新批准`,3,
+  );
+}
+
+/** 卡内容快照（排除来源哈希/状态/时间戳/批准等运行态字段） */
+function semanticSnapshot(card: ActionCard): string {
+  const plain = {
+    goal: card.goal,
+    appliesWhen: card.appliesWhen,
+    prerequisites: card.prerequisites,
+    risks: card.risks,
+    verifications: card.verifications,
+    params: card.params.map((p) => ({
+      key: p.key,
+      label: p.label,
+      required: p.required,
+      sensitive: p.sensitive,
+      defaultValue: p.defaultValue,
+    })),
+    steps: card.steps.map((s) => ({
+      title: s.title,
+      text: s.text,
+      excerpt: s.excerpt,
+      startLine: s.startLine,
+      endLine: s.endLine,
+      commands: s.commands.map((c) => `${c.risk}::${c.text}`),
+    })),
+  };
+  return JSON.stringify(plain);
+}
+
+/** 批准时以当前源文件重解析，卡内容必须与源一致，否则要求重新起草 */
+function ensureCardMatchesSource(card: ActionCard): void {
+  if (!fileExists(card.source.path)) {
+    throw new EngineError(`源文件不存在，无法批准: ${card.source.path}`, 4);
+  }
+  const text = readSourceText(card.source.path);
+  const rebuilt = buildDraft(parseMarkdown(text, card.source.path), card.source);
+  if (semanticSnapshot(rebuilt.card) !== semanticSnapshot(card)) {
     throw new EngineError(
-      `源文件已变化或缺失（${card.source.path}），卡片已置为过期，需文档拥有者重新批准`,
+      '源文件内容已变化且与当前卡不一致，不能直接批准；请基于最新源文件重新起草（draft）后再批准',
+      3,
     );
   }
 }
@@ -72,7 +119,7 @@ export function draftFromFile(filePath: string, s: Store): { cardId: string; war
   return { cardId: card.id, warnings };
 }
 
-/** 批准：草稿或过期卡 → active；重算并记录当前来源哈希/版本/批准人 */
+/** 批准：草稿或过期卡 → active；重解析校验内容与源一致并记录当前哈希/版本/批准人 */
 export function approve(cardId: string, by: string, s: Store): void {
   if (!by) throw new EngineError('缺少批准人（--by）', 2);
   const c = mustCard(cardId, s);
@@ -80,6 +127,7 @@ export function approve(cardId: string, by: string, s: Store): void {
   if (c.status === 'discarded' || c.status === 'archived') {
     throw new EngineError('已废弃卡片不可批准，请基于最新源文件重新起草', 3);
   }
+  ensureCardMatchesSource(c);
   const h = currentHashOf(c);
   if (!h) throw new EngineError(`源文件不存在，无法批准: ${c.source.path}`, 4);
   c.source.hash = h;
@@ -119,7 +167,7 @@ export function startRun(cardId: string, params: Record<string, string>, s: Stor
   if (c.status === 'draft') throw new EngineError('草稿未经批准，不能运行', 3);
   if (c.status === 'stale') throw new EngineError('卡片已过期，需重新批准后才能运行', 3);
   if (c.status !== 'active') throw new EngineError(`状态 ${c.status} 不可运行`, 3);
-  ensureSourceCurrent(c);
+  ensureSourceCurrent(c, s);
 
   const values: Record<string, string> = {};
   const sensitive: Record<string, boolean> = {};
@@ -230,6 +278,11 @@ export function pause(runId: string, s: Store): void {
 export function resume(runId: string, s: Store): void {
   const run = mustRun(runId, s);
   if (run.state !== 'paused') throw new EngineError(`状态 ${run.state} 不可续做`, 3);
+  const card = cardOf(run, s);
+  if (card.status !== 'active') {
+    throw new EngineError(`卡片状态为 ${card.status}，需重新批准后才能续做`, 3);
+  }
+  ensureSourceCurrent(card, s); // 暂停期间源文件若变化 → 置 stale 并拒绝续做
   run.state = 'in_progress';
   run.updatedAt = nowIso();
   s.saveRun(run);

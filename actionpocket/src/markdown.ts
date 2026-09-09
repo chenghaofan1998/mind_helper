@@ -77,7 +77,8 @@ function cellsOf(line: string): string[] {
     .map((c) => c.trim().replace(/^`|`$/g, ''));
 }
 
-const SENSITIVE_HINT = /(key|token|secret|passwd|password|credential|issuer)/i;
+const SENSITIVE_HINT =
+  /(key|token|secret|passwd|password|credential|issuer|access|口令|密码|密钥|令牌|凭据|授权)/i;
 
 /** 抽取参数表 + 全文占位符 {{x}}，去重合并（表优先） */
 function collectParams(
@@ -102,6 +103,7 @@ function collectParams(
     const labelCol = idx(/说明|含义/);
     const defaultCol = idx(/默认/);
     const requiredCol = idx(/必填|required/i);
+    const sensitiveCol = idx(/敏感|sensitive|secret/i);
 
     // 跳过表头与分隔行，消费连续行
     for (let j = i + 2; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
@@ -123,7 +125,11 @@ function collectParams(
       }
       if (requiredCol >= 0) existing.required = /是|必填|true/i.test(cs[requiredCol] || '');
       if (!existing.required) existing.required = false;
-      existing.sensitive = existing.sensitive || SENSITIVE_HINT.test(key);
+      if (sensitiveCol >= 0 && cs[sensitiveCol]) {
+        existing.sensitive = /是|敏感|sensitive|true|y/i.test(cs[sensitiveCol] || '');
+      }
+      existing.sensitive =
+        existing.sensitive || SENSITIVE_HINT.test(key) || SENSITIVE_HINT.test(existing.label);
       byKey.set(key, existing);
     }
   }
@@ -134,12 +140,14 @@ function collectParams(
   while ((m = re.exec(allText)) !== null) {
     const key = m[1].trim();
     if (!key || byKey.has(key)) continue;
-    byKey.set(key, {
+    const def = {
       key,
       label: key,
       required: true,
       sensitive: SENSITIVE_HINT.test(key),
-    });
+    };
+    // 若 key 只是别名（表内已声明同义标签列），此处保持占位符语义
+    byKey.set(key, def);
   }
   return Array.from(byKey.values());
 }

@@ -56,7 +56,7 @@ Event(jsonl 一行) { at, kind, cardId?, runId?, detail? }
 
 1. **只复制不执行**：引擎从不执行 `commands`；CLI/测试只产出“待复制文本”，复制动作属于桌面壳。
 2. **无来源高风险 = 0**：`draft.build` 校验——任一 high/critical 步骤若 `excerpt` 为空则整卡拒绝进入批准。
-3. **危险门**：high/critical 命令启动前必须显式 `confirm`（模拟：引擎要求参数 `confirm:true`，UI 层对应确认对话框）。
+3. **危险门**：high/critical 命令在**标记步骤完成前**必须显式确认（模拟：`step-done --confirm`，UI 层对应确认对话框）。
 4. **敏感参数**：`sensitive:true` 的参数值不写入卡 JSON 之外的回显/事件；运行日志只记 `***`。
 5. **授权最小化**：只读调用方显式传入的文件路径；不扫描目录、无监听、无网络。
 6. **事件流水**：`events.jsonl` 仅事件元数据，不含命令体与参数值。
@@ -64,28 +64,27 @@ Event(jsonl 一行) { at, kind, cardId?, runId?, detail? }
 ## 五、关键机制
 
 - **来源定位**：解析时逐行记录；列表项/代码块得到 `startLine/endLine`，摘录保持原文 1–3 行。
-- **过期检测**：批准时记录文件 `sha256 + mtime`；`engine.checkSource(id)` 重算比对，不一致 → `active→stale`；`stale` 卡启动运行被拒绝。
+- **过期检测**：批准时记录文件 `sha256 + mtime`；`engine.checkSource(id)` 重算比对，不一致 → `active→stale`；`stale` 卡启动/续做被拒绝。重新批准时以当前源文件重解析，卡内容与源**语义一致**才可直接批准，不一致须基于最新源文件重新起草（防卡内容漂移）。
 - **参数抽取**：优先识别参数表（表格含“参数/变量/说明”），其次代码块/正文中的 `{{x}}` `${x}` 占位符；去重合并。
-- **续做**：实例持久化 `stepIndex + paramValues`；`resume` 从暂停步恢复，不丢上下文。
+- **续做**：实例持久化 `stepIndex + paramValues`；`resume` 从暂停步恢复，不丢上下文，且续做前复查卡状态与源哈希（暂停期源变化 → 置 stale 拒绝续做）。
 
 ## 六、CLI 契约（`cli.ts`）
 
 ```text
-node dist/cli.js ingest  <file> [--out draft.json]    # 解析并生成草稿（校验；不落地正式卡）
-node dist/cli.js draft   <file> [--by <owner>]        # 生成草稿卡（写入 cards/）
+node dist/cli.js draft   <file>                      # 解析文件并生成草稿卡（写入 cards/）
 node dist/cli.js approve <cardId> --by <owner>        # owner 批准 → active（记录版本/hash）
 node dist/cli.js reject  <cardId> --by <owner>        # owner 驳回 → discarded
 node dist/cli.js list                                # 卡清单（含状态）
 node dist/cli.js show    <cardId>
 node dist/cli.js run     <cardId> --param k=v ...     # 启动实例；stale/高风险无来源拒绝
-node dist/cli.js step-done <runId>                    # 当前步勾选完成，推进到下一步
+node dist/cli.js step-done <runId> [--confirm]      # 勾选完成当前步（危险命令需 --confirm）
 node dist/cli.js pause <runId> | resume <runId> | abort <runId>
-node dist/cli.js verify <runId> --ok                  # 完成验证 → completed
+node dist/cli.js complete <runId>                    # 全部步骤完成后执行完成验证（原文验证项由操作者核对）
 node dist/cli.js check-source <cardId>                # 重哈希 → stale 提示
-node dist/cli.js events [--tail N]                    # 查看本地流水
+node dist/cli.js events [--tail N]                    # 查看本地使用流水
 ```
 
-退出码：0 成功；2 用法错误；3 业务拒绝（stale/风险/校验）；4 文件 IO。危险步输出 `[危险确认] 该步骤含高风险命令，已要求确认` 且需 `confirm`。
+退出码：0 成功；2 用法错误；3 业务拒绝（stale/风险/校验）；4 文件 IO。危险步须经 `--confirm` 后方可标记完成（只复制不执行）。
 
 ## 七、测试策略
 

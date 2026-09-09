@@ -94,7 +94,7 @@ test('源文件变化 → stale → 拒绝运行 → 重新批准后恢复', () 
   engine.approve(cardId, 'zhou_dba', s);
   assert.equal(engine.showCard(cardId, s).version, 1);
 
-  // 修改源文件
+  // 修改源文件（不改变步骤语义 → 允许重新批准并升级 v2）
   fs.appendFileSync(file, '\n<!-- 模拟源文件后续被修改 -->\n', 'utf8');
   const { changed } = engine.checkSource(cardId, s);
   assert.equal(changed, true);
@@ -103,11 +103,54 @@ test('源文件变化 → stale → 拒绝运行 → 重新批准后恢复', () 
   const params = { 评审号: 'CR-2026-018', 迁移文件: 'x.sql', 目标库: 'core_prod' };
   assert.throws(() => engine.startRun(cardId, params, s), /过期/);
 
-  // 重新批准（更新 hash/版本）
+  // 语义一致 → 重新批准通过
   engine.approve(cardId, 'zhou_dba', s);
   const c = engine.showCard(cardId, s);
   assert.equal(c.status, 'active');
   assert.equal(c.version, 2);
+});
+
+test('源文件内容变化且与卡不一致 → approve 拒绝，须重新起草（防卡内容漂移）', () => {
+  const s = tempStore();
+  const src = TEAM('A-release');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ap-drift-')), 'runbook.md');
+  fs.copyFileSync(src, file);
+  const { cardId } = engine.draftFromFile(file, s);
+  engine.approve(cardId, 'liang_arch', s);
+
+  // 修改真实步骤文字（例如步骤 1 标题），使卡内容与源不再一致
+  let text = fs.readFileSync(file, 'utf8').replace('拉取最新发布分支并打标签', '拉取最新发布分支并打标签（流程已改）');
+  fs.writeFileSync(file, text, 'utf8');
+  engine.checkSource(cardId, s);
+  assert.equal(engine.showCard(cardId, s).status, 'stale');
+  assert.throws(() => engine.approve(cardId, 'liang_arch', s), /不一致/);
+  assert.equal(engine.showCard(cardId, s).status, 'stale', '拒绝后保持 stale');
+
+  // 基于最新源重新起草 → 可批准
+  const { cardId: id2 } = engine.draftFromFile(file, s);
+  engine.approve(id2, 'liang_arch', s);
+  assert.equal(engine.showCard(id2, s).status, 'active');
+  assert.equal(engine.showCard(id2, s).version, 1);
+});
+
+test('暂停期间源文件变化 → resume 拒绝并置 stale', () => {
+  const s = tempStore();
+  const src = TEAM('A-release');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ap-resume-')), 'runbook.md');
+  fs.copyFileSync(src, file);
+  const { cardId } = engine.draftFromFile(file, s);
+  engine.approve(cardId, 'liang_arch', s);
+  const runId = engine.startRun(cardId, { 版本号: 'v2.14.0', 环境: 'prod' }, s);
+  engine.pause(runId, s);
+
+  fs.appendFileSync(file, '\n<!-- 运行期间文档被改动 -->\n', 'utf8');
+  assert.throws(() => engine.resume(runId, s), /过期/);
+  assert.equal(engine.showCard(cardId, s).status, 'stale');
+
+  // 语义一致 → 重新批准后恢复续做
+  engine.approve(cardId, 'liang_arch', s);
+  engine.resume(runId, s);
+  assert.equal(engine.loadRun(runId, s).state, 'in_progress');
 });
 
 test('敏感参数不持久化、不进流水；运行前必须提供', () => {
