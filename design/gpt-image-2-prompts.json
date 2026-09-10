@@ -1,0 +1,52 @@
+[
+  {
+    "file": "01-quick-capture.png",
+    "title": "快速记入",
+    "prompt": "Create a polished production-feasible desktop UI mockup for Action Pocket, an always-on-top knowledge launcher. Show a compact 560x680 Windows utility window in capture mode. Chinese UI copy must be legible: 记入, 查询, 先接住，不打断当前事情, 原始内容, 写入位置, 保存到知识库. The user is saving a short personal understanding note into Logseq. Deep graphite green title bar, warm off-white surface, jade green primary action, restrained premium productivity aesthetic, excellent spacing and typography, complete window boundary, no device mockup, no marketing background, no chatbot bubbles, no glassmorphism. Evidence-first and implementation-feasible controls."
+  },
+  {
+    "file": "02-rag-search.png",
+    "title": "RAG 查询",
+    "prompt": "Design a polished compact Action Pocket desktop utility window for semantic knowledge retrieval. Chinese UI copy: 查询, 现在遇到什么问题？, 我以前为什么觉得 Adam 的动量容易理解？, 知识库 RAG, 混合检索, 索引已更新. Show clear source health and retrieval mode. 560x680 always-on-top window, graphite green shell, warm white cards, jade accents, quiet trustworthy aesthetic, no AI mascot, no generic chat interface, no decorative charts, highly legible Chinese typography, production-feasible desktop controls."
+  },
+  {
+    "file": "03-rag-results.png",
+    "title": "证据化结果",
+    "prompt": "Create a high-fidelity Action Pocket result window. Clearly separate three layers with Chinese labels: 截图观察 or 查询意图, 知识库原文, 派生提示. Show one primary RAG result with verbatim excerpt, necessary context, pages/Adam.md, line number, block and version, plus buttons 复制原文 and 打开知识库原文, and small actions 固定, 有用, 没解决. Compact 560x680 desktop utility, jade green emphasis, warm off-white, graphite shell, restrained and accessible, no fake analytics, no chatbot bubbles, complete realistic window."
+  },
+  {
+    "file": "04-command-risk.png",
+    "title": "危险命令确认",
+    "prompt": "Design an accessible safety confirmation state inside Action Pocket for copying a destructive command. Show the source command git reset --hard HEAD~1, source citation, and a centered modal with Chinese copy: 复制前确认, 这条命令会丢弃未提交修改, Action Pocket 只会复制，不会执行, 取消, 仍然复制. Default safe action visually emphasized through focus, restrained red warning color, not alarming, keyboard hints Esc and Tab. Compact production-ready desktop UI, graphite green and warm white palette, no terminal execution button."
+  },
+  {
+    "file": "05-screenshot-capture.png",
+    "title": "截图选区",
+    "prompt": "Create a production-feasible desktop screenshot capture overlay for Action Pocket. Dim a realistic software workspace, show a user-selected rectangular region containing an error message, with resize handles and a compact floating toolbar. Chinese toolbar copy: 重新选择, 遮挡敏感信息, 取消 Esc, 使用此截图. Clearly indicate 一次性截图 and 仅保留到本次请求结束. Elegant graphite and jade visual language, privacy-first, no surveillance aesthetic, no camera imagery, no futuristic HUD."
+  },
+  {
+    "file": "06-screenshot-analysis.png",
+    "title": "截图分析与知识库联动",
+    "prompt": "Design an Action Pocket compact window after a screenshot was captured. At top show a small screenshot preview with one redacted region. Below, show distinct sections: 截图观察 with extracted visible facts, 建议问题 with an editable query, and 数据去向 showing 多模态模型 → 仅问题文本发送到知识库 RAG. Primary button: 分析并查询知识库. Secondary: 仅分析. Include provider and retention information. 560x760 desktop utility, refined graphite green, warm white, jade accents, highly legible Chinese, no chat bubbles, explicit privacy and evidence separation."
+  },
+  {
+    "file": "07-backstage-connectors.png",
+    "title": "后台连接器",
+    "prompt": "Create a high-fidelity 1280x820 desktop settings window for Action Pocket. Left navigation: 知识源, 多模态模型, 全局热键, 隐私与权限, 观察能力, 诊断. Main area shows two connector cards: 工作知识库 with RAG, 写入, 原文定位, 状态 capabilities and healthy status; 文件型 Graph marked 词法降级. Also show a multimodal connector with vision-analysis capability, supported PNG/JPEG/WebP, cloud/local processing and retention policy. Quiet enterprise-grade productivity UI, graphite sidebar, warm white content, jade green accents, no dashboard clutter."
+  },
+  {
+    "file": "08-hotkey-product-shape.png",
+    "title": "小窗与后台形态",
+    "prompt": "Design a clean product architecture storyboard for Action Pocket showing a tray background process, Ctrl+Alt+P opening a single always-on-top small window, Ctrl+Alt+Shift+P starting one-time region screenshot, Esc hiding or cancelling, and a separate backstage settings window. Use Chinese labels, clear arrows, desktop-native visual language, graphite green and jade palette, warm off-white cards, no keyboard hook, no monitoring by default. Make it look like a product design board, not a marketing infographic."
+  },
+  {
+    "file": "09-monitoring-consent.png",
+    "title": "未来观察授权",
+    "prompt": "Create a privacy-first future capability permission screen for Action Pocket. Chinese labels: 未来能力 · 默认关闭, 开始一次可见的观察会话, 观察范围, 保留策略, 数据去向, 随时停止. Show selected application-only scope, local model processing, raw frames kept only in memory, continuous visible tray status, and Cancel / 我理解并开始本次会话 buttons. Premium restrained desktop UI, warm white and graphite green, subtle red caution, absolutely no surveillance aesthetic or hidden monitoring implication."
+  },
+  {
+    "file": "10-input-output-architecture.png",
+    "title": "输入输出架构",
+    "prompt": "Create a sophisticated but implementation-focused architecture design board for Action Pocket. Four columns with Chinese labels: 输入信封, Connector Gateway, 知识库与模型, 可信输出. Inputs include 文字, 一次性截图, 图片, 未来观察事件. Connectors show capabilities, authentication, timeout, version and privacy. Knowledge systems own RAG, rerank, permissions and source documents; multimodal model analyzes screenshots. Outputs clearly separate 模型观察, 知识库原文, 派生建议. Graphite green, warm white, jade accents, clean product design diagram, no futuristic HUD, no meaningless icons."
+  }
+]

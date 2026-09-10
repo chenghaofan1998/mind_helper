@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Action Pocket Knowledge Source Connector API
-  version: 0.1.0
-  description: Provider-neutral connector contract. RAG and storage remain owned by the knowledge source.
+  title: Action Pocket Connector API
+  version: 0.2.0
+  description: Provider-neutral contract. Knowledge sources own RAG/storage; multimodal connectors own screenshot analysis.
 servers:
   - url: https://knowledge.example.com/action-pocket/v1
 security:
@@ -34,6 +34,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /analyze:
+    post:
+      operationId: analyzeInput
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: Derived multimodal observations; never knowledge-source evidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisionAnalysis'
         default:
           $ref: '#/components/responses/Error'
   /write:
@@ -126,16 +144,18 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [search, rag, write, locate, status, multimodal-input, observe]
+            enum: [search, rag, write, locate, status, vision-analysis, multimodal-input, observe]
         limits:
           type: object
           additionalProperties: true
     SourceDescriptor:
       type: object
-      required: [id, name]
+      required: [id, name, connectorType]
       properties:
         id: { type: string }
         name: { type: string }
+        connectorType: { type: string, enum: [knowledge-source, multimodal-analyzer, combined] }
+        processingLocation: { type: string, enum: [local, cloud, hybrid] }
         defaultWriteTarget: { type: string }
     SearchRequest:
       type: object
@@ -145,7 +165,50 @@ components:
         query: { type: string, minLength: 1, maxLength: 2000 }
         limit: { type: integer, minimum: 1, maximum: 20, default: 5 }
         intent: { type: string, enum: [find, command, understanding, task, decision] }
+        analysisId: { type: string, description: Short-lived reference from the same connector }
+        attachments:
+          type: array
+          description: Allowed only when multimodal-input is declared and the user explicitly consents
+          items: { $ref: '#/components/schemas/AttachmentRef' }
         filters: { type: object, additionalProperties: true }
+    AnalyzeRequest:
+      type: object
+      additionalProperties: false
+      required: [input, tasks]
+      properties:
+        input: { $ref: '#/components/schemas/InputEnvelope' }
+        tasks:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [describe-problem, extract-text, suggest-query] }
+    VisionAnalysis:
+      type: object
+      required: [requestId, analysisId, observations, suggestedQueries, sensitiveContentDetected, warnings]
+      properties:
+        requestId: { type: string }
+        analysisId: { type: string }
+        observations:
+          type: array
+          items:
+            type: object
+            required: [text]
+            properties:
+              text: { type: string }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              region:
+                type: object
+                required: [x, y, width, height]
+                properties:
+                  x: { type: number, minimum: 0, maximum: 1 }
+                  y: { type: number, minimum: 0, maximum: 1 }
+                  width: { type: number, exclusiveMinimum: 0, maximum: 1 }
+                  height: { type: number, exclusiveMinimum: 0, maximum: 1 }
+        problemStatement: { type: string }
+        extractedText: { type: string }
+        suggestedQueries: { type: array, items: { type: string }, maxItems: 5 }
+        sensitiveContentDetected: { type: boolean }
+        warnings: { type: array, items: { type: string } }
     SearchResponse:
       type: object
       required: [requestId, retrievalMode, results]
