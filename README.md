@@ -4,6 +4,8 @@
 
 当前 MVP 是一个 Web 浮窗原型：通过本机开发 API 将原始文字可靠追加到已有的文件型 Graph，并从 Markdown 标题与段落中找回少量原文。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
 
+下一阶段的“小窗 + 后台”、RAG 标准连接器、多模态输入与未来观察能力设计见 [`design/`](design/README.md)；其中包含 8 张可开发对照的 SVG UI 图和 OpenAPI 契约草案。
+
 ## 本地运行
 
 需要 Node.js 20+。Graph 目录必须显式配置；服务不会猜测或扫描其他目录。

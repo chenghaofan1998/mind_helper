@@ -1,0 +1,258 @@
+openapi: 3.1.0
+info:
+  title: Action Pocket Knowledge Source Connector API
+  version: 0.1.0
+  description: Provider-neutral connector contract. RAG and storage remain owned by the knowledge source.
+servers:
+  - url: https://knowledge.example.com/action-pocket/v1
+security:
+  - bearerAuth: []
+paths:
+  /capabilities:
+    get:
+      operationId: getCapabilities
+      responses:
+        '200':
+          description: Connector capabilities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+  /search:
+    post:
+      operationId: searchKnowledge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Evidence-backed search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /write:
+    post:
+      operationId: writeKnowledge
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriteRequest'
+      responses:
+        '200':
+          description: Verified write receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteReceipt'
+        default:
+          $ref: '#/components/responses/Error'
+  /locate:
+    post:
+      operationId: locateSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location]
+              properties:
+                location: { $ref: '#/components/schemas/SourceLocation' }
+      responses:
+        '200':
+          description: Current source location and version state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, location, versionState]
+                properties:
+                  requestId: { type: string }
+                  location: { $ref: '#/components/schemas/SourceLocation' }
+                  versionState: { type: string, enum: [current, changed, deleted, unknown] }
+        default:
+          $ref: '#/components/responses/Error'
+  /status:
+    get:
+      operationId: getStatus
+      responses:
+        '200':
+          description: Health and index freshness
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, healthy, retrievalMode]
+                properties:
+                  requestId: { type: string }
+                  healthy: { type: boolean }
+                  retrievalMode: { type: string, enum: [rag, hybrid, keyword, unavailable] }
+                  indexedAt: { type: string, format: date-time }
+                  message: { type: string }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Error:
+      description: Stable, non-sensitive error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    CapabilitiesResponse:
+      type: object
+      required: [requestId, source, capabilities]
+      properties:
+        requestId: { type: string }
+        source: { $ref: '#/components/schemas/SourceDescriptor' }
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [search, rag, write, locate, status, multimodal-input, observe]
+        limits:
+          type: object
+          additionalProperties: true
+    SourceDescriptor:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        defaultWriteTarget: { type: string }
+    SearchRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1, maxLength: 2000 }
+        limit: { type: integer, minimum: 1, maximum: 20, default: 5 }
+        intent: { type: string, enum: [find, command, understanding, task, decision] }
+        filters: { type: object, additionalProperties: true }
+    SearchResponse:
+      type: object
+      required: [requestId, retrievalMode, results]
+      properties:
+        requestId: { type: string }
+        retrievalMode: { type: string, enum: [rag, hybrid, keyword] }
+        results:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/KnowledgeResult' }
+        warnings:
+          type: array
+          items: { type: string }
+    KnowledgeResult:
+      type: object
+      required: [id, evidence, location, retrieval]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [command, understanding, note, task, decision] }
+        evidence: { $ref: '#/components/schemas/Evidence' }
+        location: { $ref: '#/components/schemas/SourceLocation' }
+        retrieval:
+          type: object
+          required: [mode]
+          properties:
+            mode: { type: string, enum: [rag, hybrid, keyword] }
+            score: { type: number }
+        derived:
+          type: object
+          properties:
+            text: { type: string }
+            type: { type: string, enum: [command, steps, checklist, explanation] }
+            evidenceIds: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
+    Evidence:
+      type: object
+      required: [excerpt]
+      properties:
+        excerpt: { type: string }
+        contextBefore: { type: string }
+        contextAfter: { type: string }
+    SourceLocation:
+      type: object
+      required: [sourceId, documentId, version]
+      properties:
+        sourceId: { type: string }
+        documentId: { type: string }
+        path: { type: string }
+        line: { type: integer, minimum: 1 }
+        blockId: { type: string }
+        version: { type: string }
+        uri: { type: string, format: uri }
+    WriteRequest:
+      type: object
+      additionalProperties: false
+      required: [input, target]
+      properties:
+        input: { $ref: '#/components/schemas/InputEnvelope' }
+        target:
+          type: object
+          required: [sourceId, location]
+          properties:
+            sourceId: { type: string }
+            location: { type: string }
+    InputEnvelope:
+      type: object
+      required: [id, modality, intent, capturedAt, consent]
+      properties:
+        id: { type: string }
+        modality: { type: string, enum: [text, image, screen, audio, event] }
+        intent: { type: string, enum: [capture, query, observe] }
+        content: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/AttachmentRef' }
+        capturedAt: { type: string, format: date-time }
+        consent:
+          type: object
+          required: [explicit, scope]
+          properties:
+            explicit: { type: boolean, const: true }
+            scope: { type: string }
+    AttachmentRef:
+      type: object
+      required: [id, mediaType, size, sha256, uri, retention]
+      properties:
+        id: { type: string }
+        mediaType: { type: string }
+        size: { type: integer, minimum: 0 }
+        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+        uri: { type: string, format: uri }
+        retention: { type: string, enum: [request, session, source] }
+    WriteReceipt:
+      type: object
+      required: [requestId, ok, location]
+      properties:
+        requestId: { type: string }
+        ok: { type: boolean, const: true }
+        location: { $ref: '#/components/schemas/SourceLocation' }
+        transforms: { type: array, items: { type: string } }
+    ErrorResponse:
+      type: object
+      required: [requestId, code, message]
+      properties:
+        requestId: { type: string }
+        code:
+          type: string
+          enum: [INVALID_INPUT, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CAPABILITY_UNAVAILABLE, PAYLOAD_TOO_LARGE, RATE_LIMITED, SOURCE_STALE, TIMEOUT, UPSTREAM_UNAVAILABLE, IO_ERROR]
+        message: { type: string }
+        retryAfterMs: { type: integer, minimum: 0 }
