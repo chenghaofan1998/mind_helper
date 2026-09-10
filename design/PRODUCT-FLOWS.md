@@ -114,7 +114,7 @@ Observation 默认只作为构造 RAG 查询的临时上下文，不自动写入
 
 ## 6. 未来观察能力
 
-只预留 `observe` capability，不在 MVP 启用。
+只预留 `observe` capability，不在 MVP 启用（本轮不实现，见 `IMPLEMENTATION-NOTES.md` 09）。
 
 未来流程必须是：
 

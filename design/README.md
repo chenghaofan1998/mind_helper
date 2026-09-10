@@ -1,6 +1,8 @@
 # Action Pocket 设计基线
 
 > 状态：MVP 产品形态与连接器设计基线。实现仍以 `docs/ACTION-POCKET-CHARTER.md` 为最高约束。
+>
+> ⚠️ **`generated/` 里的原型图是探索素材，不是验收清单。** 首版实际做什么，以 [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md) 为准。
 
 ## 结论
 
@@ -10,8 +12,9 @@ Action Pocket 是一个**小窗 + 后台**的知识行动入口：小窗负责�
 
 | 文件 | 用途 |
 |---|---|
-| `ui/*.svg` | 8 张可编辑结构稿，用于约束布局和开发实现，不作为 GPT 生图成品 |
-| `generated/gpt-image-2/*.png` | GPT Image 2 正式视觉探索图（生成后写入） |
+| `IMPLEMENTATION-NOTES.md` | **范围权威**：逐图「保留 / 简化 / 不做」注记与阶段验收 |
+| `generated/gpt-image-2/*.png` | 10 张已生成的视觉探索图，仅供评审与参考 |
+| `ui/*.svg` | 8 张可编辑结构稿，用于约束布局，非最终视觉 |
 | `gpt-image-2-prompts.json` | 10 个统一风格的 GPT Image 2 分镜提示词 |
 | `generate-gpt-image-2.mjs` | 固定使用 `gpt-image-2` 的正式生图脚本 |
 | `UI-GENERATION-BRIEF.md` | 生图输入、输出和评审标准 |
@@ -31,7 +34,7 @@ OPENAI_API_KEY=*** npm run design:generate
 OPENAI_API_KEY=*** npm run design:generate -- --only=05-screenshot-capture.png
 ```
 
-脚本固定调用官方 `gpt-image-2` 和 `v1/images/generations`，以高质量 1536×1024 PNG 输出到 `generated/gpt-image-2/`。当前执行环境没有配置 API Key，因此仓库内暂时只有提示词与 SVG 结构稿。
+脚本固定调用官方 `gpt-image-2` 和 `v1/images/generations`，以高质量 1536×1024 PNG 输出到 `generated/gpt-image-2/`。10 张图已由外部生图工具完成并入库（约 13 MiB），脚本保留用于重生成与后续版本。
 
 ## 视觉方向
 
@@ -43,12 +46,15 @@ OPENAI_API_KEY=*** npm run design:generate -- --only=05-screenshot-capture.png
 
 ## 实施顺序
 
-1. 标准 Connector API、远程 RAG 与多模态分析适配器。
-2. Neutralino 小窗（置顶、托盘、窗口显隐）。
-3. `Ctrl+Alt+P` 普通入口与 `Ctrl+Alt+Shift+P` 一次性截图。
-4. 截图预览、遮挡、明确发送范围和证据分层。
-5. 后台知识源、模型、热键、权限与连接测试。
-6. 真实截图试用后，再判断持续观察是否值得进入开发。
+**P0（首版闭环，只做 4 个画面）**：快速记入 → 查询 → 结果 → 危险确认，接一个真实知识源。
+
+**P1（第二闭环）**：一次性截图 → 选区 → 预览 → 分析 → 联合查询。
+
+**P2（需真实数据支撑）**：固定/有用反馈、遮挡编辑、多来源切换、Derived 渲染。
+
+**本轮不做**：观察会话、架构图页面、能力矩阵、凭据管理 UI、多模型路由。
+
+详细拆分与验收标准见 [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md)。
 
 ## 明确边界
 

@@ -22,6 +22,8 @@ Ctrl+Alt+Shift+P
 
 默认热键：
 
+> 范围限定：首版截图链路只做「选区 → 预览 → 一个主按钮 → 查询」。遮挡编辑、region 级引用、OCR 分区展示属 P2，见 `IMPLEMENTATION-NOTES.md` 05/06。
+
 - `Ctrl+Alt+P`：普通小窗；
 - `Ctrl+Alt+Shift+P`：一次性截图；
 - `Esc`：在任意截图阶段立即取消并销毁会话临时图像。
