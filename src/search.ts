@@ -1,63 +1,91 @@
-import type { KnowledgeCard, RiskLevel } from "./types";
+export type RiskLevel = "low" | "high" | "critical";
 
 const commandPrefixes = [
   "git ", "docker ", "kubectl ", "npm ", "pnpm ", "yarn ", "node ", "python ", "pip ",
   "find ", "grep ", "awk ", "sed ", "tar ", "curl ", "wget ", "ffmpeg ", "adb ",
-  "chmod ", "chown ", "rm ", "mv ", "cp ", "du ", "df ", "lsof ", "netstat ", "ss ",
-  "mysql ", "psql ", "sqlite3 ", "sudo ", "ssh ", "scp ", "rsync ", "brew ", "winget ",
+  "chmod ", "chown ", "rm ", "mv ", "cp ", "du ", "df ", "lsof ", "sudo ", "ssh ",
 ];
 
 export function looksLikeCommand(value: string): boolean {
   const line = value.trim().replace(/^(\$|>|PS>)\s*/i, "").toLowerCase();
   return commandPrefixes.some((prefix) => line.startsWith(prefix)) ||
-    /^(select|insert|update|delete|drop|truncate)\s+/i.test(line) ||
-    /^\/(gamemode|give|tp|time|weather|effect)\b/i.test(line);
+    /^(select|insert|update|delete|drop|truncate)\s+/i.test(line);
 }
 
-export function detectRisk(value: string): RiskLevel {
-  const content = value.toLowerCase();
-  if (/rm\s+-rf\s+\//.test(content) || content.includes("mkfs") || content.includes("dd if=") || content.includes("drop database") || content.includes("truncate table")) return "critical";
-  if (/rm\s+-rf/.test(content) || content.includes("delete from") || content.includes("chown -r") || content.includes("git clean -fd")) return "high";
-  if (content.includes("sudo") || content.includes("docker system prune") || content.includes("git reset") || content.includes("chmod") || content.includes("update ")) return "medium";
+function commandName(token: string | undefined): string {
+  return (token ?? "").toLowerCase().split(/[\\/]/).at(-1) ?? "";
+}
+
+function consumeWrapperOptions(tokens: string[], start: number, optionsWithValues: Set<string>): number {
+  let index = start;
+  while (index < tokens.length) {
+    const option = tokens[index];
+    if (option === "--") return index + 1;
+    if (!option.startsWith("-")) break;
+    index += 1;
+    const name = option.split("=", 1)[0];
+    if (optionsWithValues.has(name) && !option.includes("=")) index += 1;
+  }
+  return index;
+}
+
+function unwrapRm(tokens: string[]): string[] | undefined {
+  let index = 0;
+  while (index < tokens.length) {
+    const wrapper = commandName(tokens[index]);
+    if (wrapper === "sudo") {
+      index = consumeWrapperOptions(tokens, index + 1, new Set(["-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "--chdir", "-T", "--command-timeout"]));
+      continue;
+    }
+    if (wrapper === "env") {
+      index = consumeWrapperOptions(tokens, index + 1, new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]));
+      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index] ?? "")) index += 1;
+      continue;
+    }
+    break;
+  }
+  return commandName(tokens[index]) === "rm" ? tokens.slice(index + 1) : undefined;
+}
+
+function hasRecursiveRm(command: string): boolean {
+  for (const segment of command.split(/[;&|\n]/)) {
+    const tokens = segment.trim().replace(/^(\$|>|PS>)\s*/i, "").split(/\s+/).filter(Boolean);
+    const arguments_ = unwrapRm(tokens);
+    if (!arguments_) continue;
+    for (const token of arguments_) {
+      if (token === "--") break;
+      if (/^--recursive$/i.test(token) || (/^-[a-z]+$/i.test(token) && /r/i.test(token))) return true;
+    }
+  }
+  return false;
+}
+
+function isDiskDestructive(command: string): boolean {
+  return /\bdd\b[^\n]*\bof=\/dev\//i.test(command) ||
+    /\b(mkfs|diskpart|format-volume)\b/i.test(command) ||
+    /\bformat\b[^\n]*([a-z]:[\\/]?|volume|\/dev\/(sd|vd|nvme|disk))/i.test(command);
+}
+
+export function detectRisk(command: string): RiskLevel {
+  if (isDiskDestructive(command) || /\bshutdown\b[^\n]*(-r|-s)\b/i.test(command)) return "critical";
+  if (hasRecursiveRm(command)) return "high";
+  if (
+    /\bRemove-Item\b[^\n]*(-Recurse|-Force)/i.test(command) ||
+    /\b(del|rd|rmdir)\s+\/s\b/i.test(command) ||
+    /\bgit\s+(push|reset)\b[^\n]*?(--force(-with-lease)?|-f\b|--hard)/i.test(command) ||
+    /\bchmod\s+-R\s+777\b/i.test(command) ||
+    /\b(drop\s+(table|database|schema|collection)|truncate\s+table|delete\s+from|update\s+\S+\s+set|insert\s+into)\b/i.test(command) ||
+    /\bmysql\b[^\n]*<\s*\S+/i.test(command)
+  ) return "high";
   return "low";
 }
 
-export function inferCategoryId(value: string): string {
-  const content = value.toLowerCase();
-  if (/\b(git|commit|branch|rebase|merge)\b/.test(content)) return "git";
-  if (/\b(docker|container|image|compose)\b/.test(content)) return "docker";
-  if (/\b(select|insert|update|delete|drop|truncate|postgres|mysql|sqlite|sql)\b/.test(content)) return "database";
-  if (/\b(ffmpeg|adb|video|audio|codec)\b/.test(content) || /视频|音频|媒体/.test(content)) return "media";
-  if (/\/(gamemode|give|tp|time|weather|effect)\b/.test(content) || /游戏|攻略|任务|存档|minecraft|gta/.test(content)) return "game";
-  if (/\b(linux|sudo|chmod|lsof|grep|find|ssh|curl|wget|tar)\b/.test(content) || /端口|进程|目录|权限/.test(content)) return "linux";
-  return "workflow";
+export function isDangerous(command: string): boolean {
+  const risk = detectRisk(command);
+  return risk === "high" || risk === "critical";
 }
 
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
+export function commandForClipboard(excerpt: string): string {
+  const fenced = excerpt.match(/^```[^\r\n]*\r?\n([\s\S]*?)\r?\n```\s*$/);
+  return (fenced?.[1] ?? excerpt).trim();
 }
-
-export function searchCards(cards: KnowledgeCard[], query: string): KnowledgeCard[] {
-  const q = normalize(query);
-  const terms = q.split(" ").filter(Boolean);
-
-  return cards
-    .map((card) => {
-      const title = normalize(card.title);
-      const body = normalize(`${card.description} ${card.content} ${card.tags.join(" ")} ${card.source}`);
-      let score = card.isFavorite ? 4 : 0;
-      if (!q) score += new Date(card.updatedAt).getTime() / 1e13;
-      if (title === q) score += 80;
-      if (title.includes(q) && q) score += 40;
-      if (body.includes(q) && q) score += 24;
-      for (const term of terms) {
-        if (title.includes(term)) score += 12;
-        if (body.includes(term)) score += 5;
-      }
-      return { card, score };
-    })
-    .filter(({ score }) => !q || score > 0)
-    .sort((a, b) => b.score - a.score || b.card.updatedAt.localeCompare(a.card.updatedAt))
-    .map(({ card }) => card);
-}
-

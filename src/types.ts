@@ -1,47 +1,18 @@
-export type RiskLevel = "low" | "medium" | "high" | "critical";
-
-export type CardKind = "command" | "guide" | "note" | "warning";
-
-export interface Category {
-  id: string;
-  name: string;
-  description: string;
-  color: string;
-  icon: string;
-  builtIn?: boolean;
-}
-
-export interface Scene {
-  id: string;
-  name: string;
-  description: string;
-  categoryIds: string[];
-  accent: string;
-  icon: string;
-  builtIn?: boolean;
-}
-
-export interface KnowledgeCard {
-  id: string;
-  title: string;
-  content: string;
-  description: string;
-  categoryId: string;
-  sceneIds: string[];
-  tags: string[];
-  kind: CardKind;
-  riskLevel: RiskLevel;
-  source: string;
-  isFavorite: boolean;
-  createdAt: string;
-  updatedAt: string;
-  lastCopiedAt?: string;
-}
-
-export interface AppState {
-  version: 2;
-  categories: Category[];
-  scenes: Scene[];
-  cards: KnowledgeCard[];
-}
-
+// Compatibility export for integrations that imported the old root module.
+// Product code uses the source-neutral contracts directly from knowledge/types.
+export type {
+  Capability,
+  KnowledgeErrorCode,
+  KnowledgeResult,
+  KnowledgeResultKind,
+  KnowledgeSource,
+  PinnedResult,
+  SearchInput,
+  SourceDescriptor,
+  SourceLocation,
+  UsefulFeedback,
+  WriteFailure,
+  WriteInput,
+  WriteReceipt,
+  WriteSuccess,
+} from "./knowledge/types";

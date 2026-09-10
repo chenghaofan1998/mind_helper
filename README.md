@@ -1,69 +1,68 @@
 # Action Pocket
 
-**连接知识库与日常任务的统一轻量入口：随手记进去，需要时拿出来，变成自己看得懂、用得上的内容。**
+**连接知识库与日常任务的统一轻量入口：随手记进去，需要时拿出来。**
 
-既是知识输入入口，也是知识输出入口；不绑定某一种知识库软件（Logseq 是当前验证起点，非产品边界），不替代已有知识库，也不另建知识库。首版聚焦快速记录、命令调用和个人理解片段找回。
+当前 MVP 是一个 Web 浮窗原型：通过本机开发 API 将原始文字可靠追加到已有的文件型 Graph，并从 Markdown 标题与段落中找回少量原文。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
 
-> **最高优先级文档：[项目纲领](docs/ACTION-POCKET-CHARTER.md)。** 旧团队 Runbook 方向已被替代。以下 Command Pocket、v5-pilot 和模拟试点内容仅说明历史资产与现有实现，不代表新方向已交付。
+## 本地运行
 
-## 权威文档（按优先级）
-
-| 文档 | 角色 |
-|---|---|
-| `docs/ACTION-POCKET-CHARTER.md` | **唯一最高优先级项目纲领**（知识输入与输出、首版范围、技术边界和验证方式） |
-| `docs/v5pilot/SPEC.md` | Command Pocket v5-pilot 历史试点规格（仅供旧实现参考） |
-| `docs/relook/DECISION.md` | v4 战略打回决议 + 四路重想终裁（为什么是"行为记忆"而不是"命令抽屉"） |
-| `docs/relook/` | 打回决议与四路提案（A 止损 / B 钉子 / C 场景 / D 市场实证）——决策链存档 |
-| `docs/actionpocket/` | **Action Pocket 阶段 1 模拟试点**（产品设计 / 架构 / 模拟五团队 / 模拟试点报告）——机制验证，非真实市场证据 |
-
-> 历史规格（v2 MASTER/MVP、v3 VISION/SCENARIO、v4 PRODUCT/REQUIREMENTS/TESTCASES/ACCEPTANCE 等）已删除——产品方向经 v4 打回后已换代，旧文档不再适用。全部历史仍可在 **git 历史**中追溯（`git log -- docs/`）。
-
-## 目录结构
-
-```text
-native/                 主交付源码（C# WinForms）
-  CommandPocketPilot.cs   v5-pilot 试点最小单文件（开发中，≤1200 行）
-  CommandPocketNative.cs  v4 旧版（已退役，留在 git 历史可回退）
-  build.ps1              编译 + 自测（只用 Windows 自带 csc.exe，无第三方依赖）
-scripts/                打包脚本
-docs/                   文档（Action Pocket 纲领 + v5pilot 规格 + relook 决策链）
-src/                    备用 Web 原型（Neutralino，仅界面实验，非主交付）
-actionpocket/            Action Pocket 阶段 1 可运行原型（TS，机制验证用，非最终交付；含 CLI/测试/模拟 Runbook）
-dist/CommandPocketNative/   旧版现役 exe（v4 时代，待 v5-pilot 替换）
-dist-native/                npm run desktop 的开发构建输出
-```
-
-## 开发构建（改动 native 源码后）
-
-```powershell
-npm run desktop            # 编译旧版 CommandPocketNative（已退役）
-npm run desktop:pilot      # 编译 v5-pilot：native\CommandPocketPilot.cs + --self-test → dist-native\CommandPocketPilot.exe
-```
-
-> Linux 容器内无法编译/运行 WinForms（不做任何工具链安装）；代码经静态审查 + Node 规则对拍（scripts/pilot-check.js）验证，最终编译与 UI 运行以 Windows `npm run desktop:pilot` 为准。
-
-## 重新打包
-
-```powershell
-npm run desktop:package
-```
-
-> `desktop:web*` 系列需要 node_modules（npm install），仅供备用 Web 原型实验。
-
-## Action Pocket 阶段 1 原型（本分支新增）
-
-> 因无 5 个真实设计合作团队，按发起人指示以 5 个**模拟团队**驱动完整操作流，见 `docs/actionpocket/`。
-> 声明：模拟试点数据不构成产品成立证据；真实阶段 0 仍待补齐。
+需要 Node.js 20+。Graph 目录必须显式配置；服务不会猜测或扫描其他目录。
 
 ```bash
-npm run ap:test        # TS 编译 + 单元/集成/五队端到端测试（20 项）
-npm run ap:simulate    # 模拟试点执行器：5 队完整旅程 + 指标表
+npm ci
+AP_GRAPH_DIR=/absolute/path/to/your/graph npm run dev
+# 浏览器打开 http://127.0.0.1:5173
 ```
 
-落地形态：`actionpocket/src`（types/risk/markdown/draft/store/engine/cli）。Windows/.NET 交付映射见 `docs/actionpocket/02-architecture.md` ADR-1。
+Windows PowerShell：
 
-## 历史 v5-pilot 状态（不作为当前立项与验收依据）
+```powershell
+$env:AP_GRAPH_DIR = "C:\Users\you\notes"
+npm run dev
+```
 
-- v5-pilot 试点规格已锁版（`docs/v5pilot/SPEC.md`），待开发最小单文件 + 真机试点
-- 试点生死线：连 5 个工作日日均唤起 ≥5 且 唤起→复制中位 ≤10s 且 零打字采纳 ≥40% —— 过线升级为 v5 正式规格；连 3 日零唤起则作废归档
-- 真机验证前置：Windows 上 `npm run desktop`（编译 + SelfTest 全绿）+ 编译产物本机 Defender/SAC 实测（详见 SPEC §五）
+首次写入会在 Graph 内创建目标子目录。默认位置是 `journals/YYYY_MM_DD.md`，提交前可见且可修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
+
+> `/api/*` 只由 Vite 的 `configureServer` 在 `npm run dev` 中提供，并只监听 `127.0.0.1`。`npm run preview` 是静态预览，不具备知识源读写能力，也不是可分发服务。
+
+## MVP 数据与能力边界
+
+- 核心以 `KnowledgeSource`、`SourceDescriptor` 和 capabilities（`read/search/write/locate/status`）描述知识源，不绑定特定笔记软件。
+- 首个适配器是文件型 Graph：只访问 `AP_GRAPH_DIR` 内的 `.md` / `.markdown`；拒绝绝对路径、`..` 和符号链接越界。
+- `/api/sources` 发现来源及能力；`/api/search` 返回最多 5 条原文摘录、相邻块、相对路径、1-based 行号与版本；`/api/write` 追加原始内容并在 `fsync`、回读校验后返回回执。
+- 当前检索诚实标记为**本地词法 fallback**，未接入或伪装 embedding/rerank。未来来源可实现同一 HTTP/能力契约。
+- 浏览器仅持久化临时写入草稿和偏好。固定与“有用”反馈只保存来源位置和版本，不保存摘录正文；旧 `command-pocket-library-v2` 正文快照会被删除而不会迁移。
+- “复制原文定位”提供 `sourceId / relative/path.md:line`。普通 Web 页面不能可靠打开任意本地编辑器，因此 MVP 不伪造文件跳转。
+- 命令只能复制，永不执行；递归删除、强制 Git 改写、磁盘覆盖、写库等危险内容复制前需要二次确认。
+- 正文不发送到云端，也不写入服务日志。
+
+## API 摘要
+
+```text
+GET  /api/sources
+POST /api/search  { query, sourceId?, limit? }
+POST /api/write   { rawContent, target: { sourceId, relativePath } }
+```
+
+错误以稳定的 `code` 与非敏感 `message` 返回。API 使用每次开发服务启动时随机生成并注入页面的会话 token；浏览器请求还必须通过本机同源校验，无 `Origin` 的非浏览器请求也必须携带该 token。写入和查询只接受 `application/json`。单次写入上限 256 KiB，请求体上限 300 KiB，查询上限 500 字符；搜索总读取预算为 32 MiB，并限制目录、目录项、候选文件和候选块规模，跳过隐藏目录、`.git`、`logseq/bak`、符号链接和超大文件。
+
+## 验证
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+手工闭环：
+
+1. 用临时 Graph 启动：`AP_GRAPH_DIR=/tmp/ap-graph npm run dev`。
+2. 在“记入”输入唯一文本，确认目标后保存；检查对应 Markdown 保留原文。
+3. 在“查询”用自然语言找回，确认结果不超过 5 条，包含相对路径、行号和上下文。
+4. 将 Graph 改为只读后再次写入，确认不显示成功且输入仍在。
+5. 查询危险命令，确认首次复制被弹窗拦截，确认后仅进入剪贴板。
+6. 固定结果后修改来源文件并再次查询；版本变化时固定引用显示过期提示。
+
+## 历史资产
+
+`actionpocket/`、`native/`、`docs/v5pilot/`、`docs/relook/` 和 `docs/actionpocket/` 是旧 Command Pocket / Runbook 探索，仅供实现经验参考，不是当前 MVP 的产品模型或验收入口。对应历史测试仍可单独运行 `npm run ap:test`。
