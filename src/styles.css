@@ -68,6 +68,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .source-status::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #d9a39e; }
 .source-status.ready::before { background: #76c6ad; }
+.pin-button { display: grid; width: 30px; height: 30px; margin-left: 8px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #cadbd4; font-size: 12px; transform: rotate(45deg); }
+.pin-button:hover, .pin-button.active { background: rgba(255,255,255,.12); color: #fff; }
 
 .mode-tabs {
   display: flex;

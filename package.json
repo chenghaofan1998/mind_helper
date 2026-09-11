@@ -11,6 +11,7 @@
     "server:build": "node -e \"require('node:fs').rmSync('.server-dist',{recursive:true,force:true})\" && tsc -p tsconfig.runtime.json",
     "start": "npm run build && npm run server:build && node .server-dist/server/app.js",
     "preview": "vite preview --host 127.0.0.1",
+    "icon:generate": "node scripts/generate-app-icon.mjs",
     "design:generate": "node design/generate-gpt-image-2.mjs",
     "design:generate:svg": "node design/generate-ui-mocks.mjs",
     "desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1",

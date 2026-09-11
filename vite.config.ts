@@ -24,6 +24,7 @@ function knowledgeApi(): Plugin {
 
 export default defineConfig({
   base: "./",
+  publicDir: "icons",
   plugins: [knowledgeApi()],
   build: { outDir: "web-dist" },
   server: { host: "127.0.0.1", port: 5173 },

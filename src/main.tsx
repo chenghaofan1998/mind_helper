@@ -1,5 +1,6 @@
 import "./styles.css";
 import { copyText } from "./clipboard";
+import { hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, toggleDesktopPin } from "./desktopRuntime";
 import { clearDraft, loadDraft, saveDraft } from "./draftStore";
 import { focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import { listSources, searchKnowledge, writeKnowledge } from "./knowledge/client";
@@ -37,6 +38,7 @@ let riskResultId = "";
 let riskReturnResultId = "";
 let clipboardError = "";
 let editingTarget = false;
+let windowPinned = false;
 let toastTimer = 0;
 
 function escapeHtml(value: string): string {
@@ -176,7 +178,7 @@ function renderRiskModal(): string {
 function render(): void {
   const source = activeSource();
   root.innerHTML = `<main class="pocket">
-    <header class="app-header"><strong>AP</strong><span class="source-status ${source ? "ready" : ""}">${loading ? "连接中" : source?.name ?? "未配置"}</span></header>
+    <header class="app-header"><strong>AP</strong><span class="source-status ${source ? "ready" : ""}">${loading ? "连接中" : source?.name ?? "未配置"}</span>${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}">◆</button>` : ""}</header>
     ${renderTabs()}${mode === "record" ? renderRecord() : renderQuery()}
     <div class="toast-region" aria-live="polite"></div>${renderRiskModal()}
   </main>`;
@@ -326,6 +328,7 @@ root.addEventListener("click", (event) => {
   if (action === "mode") selectMode(button.dataset.mode === "record" ? "record" : "query");
   else if (action === "edit-target") { editingTarget = !editingTarget; render(); }
   else if (action === "settings") showToast("当前开发版通过 AP_GRAPH_DIR 配置知识源");
+  else if (action === "toggle-window-pin") void toggleDesktopPin().catch((error) => showToast(`置顶切换失败：${String(error)}`));
   else if (action === "pin" && result) { const value = togglePin(preferences, result.location); savePreferences(preferences); render(); showToast(value ? "已固定来源引用" : "已取消固定"); }
   else if (action === "unpin") { const pin = preferences.pins.find((item) => locationKey(item.location) === button.dataset.key); if (pin) { togglePin(preferences, pin.location); savePreferences(preferences); render(); } }
   else if (action === "useful" && result) { setFeedback(preferences, result.location, "useful"); savePreferences(preferences); render(); showToast("已记录为有用（仅保存来源引用）"); }
@@ -346,6 +349,7 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (event.key === "Escape" && isDesktopRuntime()) { event.preventDefault(); void hideDesktopWindow(); return; }
   if (mode === "record" && event.key === "Enter" && (event.ctrlKey || event.metaKey) && !busy) {
     const form = root.querySelector<HTMLFormElement>("#record-form");
     if (activeSource()?.capabilities.includes("write") && form?.reportValidity()) { event.preventDefault(); void submitRecord(); }
@@ -368,4 +372,8 @@ async function initialize(): Promise<void> {
   finally { loading = false; render(); }
 }
 
+initializeDesktopRuntime({
+  onPinnedChange(value) { windowPinned = value; render(); },
+  onError(message) { showToast(message); },
+});
 void initialize();

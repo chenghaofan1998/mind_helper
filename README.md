@@ -41,7 +41,7 @@ npm start
 
 首次写入会在 Graph 内创建目标子目录。默认位置是 `journals/YYYY_MM_DD.md`，提交前可见且可修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
 
-> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。当前 Neutralino 压缩包仍未内置 Node 运行时或自动拉起该服务，不能把静态桌面包标记为独立可分发版本。
+> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳已具备托盘、关闭后隐藏、Esc 隐藏和窗口置顶，并可成功生成资源包；但压缩包仍未内置 Node 运行时或自动拉起知识源服务，不能标记为独立可分发版本。Neutralino 当前没有官方跨平台全局热键 API，本项目不会用键盘钩子冒充该能力，`Ctrl+Alt+P` 留待受控原生辅助进程实现和真机验收。
 
 ## MVP 数据与能力边界
 

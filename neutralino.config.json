@@ -9,6 +9,8 @@
   "enableServer": true,
   "enableNativeAPI": true,
   "tokenSecurity": "one-time",
+  "dataLocation": "system",
+  "storageLocation": "system",
   "logging": {
     "enabled": false,
     "writeToLogFile": false
@@ -24,6 +26,7 @@
   "modes": {
     "window": {
       "title": "Action Pocket",
+      "icon": "/icons/action-pocket.png",
       "width": 560,
       "height": 680,
       "minWidth": 440,
@@ -36,7 +39,7 @@
       "hidden": false,
       "resizable": true,
       "enableInspector": false,
-      "exitProcessOnClose": true
+      "exitProcessOnClose": false
     }
   },
   "cli": {
