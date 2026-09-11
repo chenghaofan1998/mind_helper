@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { open, lstat, mkdir, opendir, realpath, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import type {
   KnowledgeResult,
   KnowledgeResultKind,
@@ -142,13 +143,14 @@ function clipExcerpt(value: string, length: number): string {
   return value.length > length ? `${value.slice(0, length)}\n…（摘录已截断，请按来源定位查看原文）` : value;
 }
 
-function resultFromBlock(document: IndexedDocument, block: TextBlock, index: number, score: number, sourceId: string): KnowledgeResult {
+function resultFromBlock(document: IndexedDocument, block: TextBlock, index: number, score: number, sourceId: string, root: string): KnowledgeResult {
   const blockHash = hash(block.text).slice(0, 16);
   const location: SourceLocation = {
     sourceId,
     documentId: document.path,
     path: document.path,
     line: block.line,
+    uri: pathToFileURL(resolve(root, document.path)).href,
     blockId: blockHash,
     version: document.version,
   };
@@ -355,7 +357,7 @@ export class FileGraphSource implements KnowledgeSource {
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score || a.document.path.localeCompare(b.document.path) || a.block.line - b.block.line)
       .slice(0, cappedLimit)
-      .map((item) => resultFromBlock(item.document, item.block, item.index, item.score, this.sourceId));
+      .map((item) => resultFromBlock(item.document, item.block, item.index, item.score, this.sourceId, this.root));
   }
 
   async write(input: WriteInput): Promise<WriteReceipt> {

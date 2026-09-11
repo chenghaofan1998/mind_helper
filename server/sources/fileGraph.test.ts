@@ -5,6 +5,7 @@ import { constants } from "node:fs";
 import { mkdtemp, mkdir, open, readFile, readdir, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { FILE_GRAPH_SEARCH_LIMITS, FileGraphSource, parseMarkdown } from "./fileGraph.js";
 
@@ -100,6 +101,7 @@ test("search returns top-N excerpts with source line and adjacent context", asyn
   assert.equal(results.length, 1);
   assert.equal(results[0].location.path, "notes.md");
   assert.equal(results[0].location.line, 5);
+  assert.equal(results[0].location.uri, pathToFileURL(join(root, "notes.md")).href);
   assert.equal(results[0].kind, "command");
   assert.match(results[0].contextBefore ?? "", /清理前/);
   assert.match(results[0].contextAfter ?? "", /删除未使用/);
