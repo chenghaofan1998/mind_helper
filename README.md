@@ -23,9 +23,25 @@ $env:AP_GRAPH_DIR = "C:\Users\you\notes"
 npm run dev
 ```
 
+生产构建可使用独立本机服务运行，不依赖 Vite 开发中间件：
+
+```bash
+AP_GRAPH_DIR=/absolute/path/to/your/graph npm start
+# 浏览器打开 http://127.0.0.1:43127
+```
+
+Windows PowerShell：
+
+```powershell
+$env:AP_GRAPH_DIR = "C:\Users\you\notes"
+npm start
+```
+
+可通过 `AP_PORT` 修改端口。服务仅监听 `127.0.0.1`，启动时为页面生成新的会话令牌，并对静态资源启用 CSP、禁止嵌入和禁止缓存。
+
 首次写入会在 Graph 内创建目标子目录。默认位置是 `journals/YYYY_MM_DD.md`，提交前可见且可修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
 
-> `/api/*` 只由 Vite 的 `configureServer` 在 `npm run dev` 中提供，并只监听 `127.0.0.1`。`npm run preview` 是静态预览，不具备知识源读写能力，也不是可分发服务。
+> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。当前 Neutralino 压缩包仍未内置 Node 运行时或自动拉起该服务，不能把静态桌面包标记为独立可分发版本。
 
 ## MVP 数据与能力边界
 
@@ -54,6 +70,7 @@ POST /api/write   { rawContent, target: { sourceId, relativePath } }
 npm run typecheck
 npm test
 npm run build
+npm run server:build
 ```
 
 手工闭环：
