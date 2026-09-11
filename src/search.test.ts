@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { commandForClipboard, detectRisk, isDangerous, looksLikeCommand } from "./search.js";
+import { commandForClipboard, detectRisk, isDangerous, looksLikeCommand, riskImpact } from "./search.js";
 
 test("recognizes command-shaped source excerpts", () => {
   assert.equal(looksLikeCommand("$ docker ps"), true);
@@ -20,6 +20,8 @@ test("danger matrix blocks destructive copies", () => {
   for (const command of critical) assert.equal(detectRisk(command), "critical", command);
   assert.equal(isDangerous("docker ps"), false);
   assert.equal(detectRisk("git status"), "low");
+  assert.match(riskImpact("git reset --hard HEAD~1"), /暂存区和工作区/);
+  assert.match(riskImpact("git push --force origin main"), /远端分支历史/);
 });
 
 test("copies executable code from a Markdown fence without copying fence markers", () => {

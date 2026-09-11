@@ -85,6 +85,20 @@ export function isDangerous(command: string): boolean {
   return risk === "high" || risk === "critical";
 }
 
+export function riskImpact(command: string): string {
+  if (/\bgit\s+reset\b[^\n]*--hard/i.test(command)) {
+    return "当前分支将移动到指定提交，并丢弃已跟踪文件在暂存区和工作区的未提交修改。";
+  }
+  if (/\bgit\s+push\b[^\n]*(--force(-with-lease)?|-f\b)/i.test(command)) {
+    return "强制推送可能覆盖远端分支历史，并影响其他协作者。";
+  }
+  if (isDiskDestructive(command)) return "这条命令可能格式化或覆盖磁盘数据。";
+  if (hasRecursiveRm(command) || /\bRemove-Item\b[^\n]*(-Recurse|-Force)/i.test(command)) {
+    return "这条命令可能递归删除文件或目录。";
+  }
+  return "这条命令可能删除、覆盖或大范围修改数据。";
+}
+
 export function commandForClipboard(excerpt: string): string {
   const fenced = excerpt.match(/^```[^\r\n]*\r?\n([\s\S]*?)\r?\n```\s*$/);
   return (fenced?.[1] ?? excerpt).trim();

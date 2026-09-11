@@ -23,10 +23,10 @@
   ],
   "modes": {
     "window": {
-      "title": "Command Pocket",
-      "width": 1180,
-      "height": 760,
-      "minWidth": 820,
+      "title": "Action Pocket",
+      "width": 560,
+      "height": 680,
+      "minWidth": 440,
       "minHeight": 560,
       "center": true,
       "alwaysOnTop": false,
