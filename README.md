@@ -102,7 +102,3 @@ npm run server:build
 4. 将 Graph 改为只读后再次写入，确认不显示成功且输入仍在。
 5. 查询危险命令，确认首次复制被弹窗拦截，确认后仅进入剪贴板。
 6. 固定结果后修改来源文件并再次查询；版本变化时固定引用显示过期提示。
-
-## 历史资产
-
-`actionpocket/`、`native/`、`docs/v5pilot/`、`docs/relook/` 和 `docs/actionpocket/` 是旧 Command Pocket / Runbook 探索，仅供实现经验参考，不是当前 MVP 的产品模型或验收入口。对应历史测试仍可单独运行 `npm run ap:test`。

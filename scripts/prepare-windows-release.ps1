@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$releaseDir = Join-Path $root "dist\CommandPocket"
+$releaseDir = Join-Path $root "dist\ActionPocket"
 if (-not (Test-Path $releaseDir)) {
     throw "Neutralino release directory not found: $releaseDir"
 }

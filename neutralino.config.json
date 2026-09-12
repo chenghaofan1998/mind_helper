@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
-  "applicationId": "com.commandpocket.note",
+  "applicationId": "com.actionpocket.app",
   "version": "0.2.0",
   "defaultMode": "window",
   "port": 0,
@@ -44,7 +44,7 @@
     }
   },
   "cli": {
-    "binaryName": "CommandPocket",
+    "binaryName": "ActionPocket",
     "resourcesPath": "/web-dist/",
     "extensionsPath": "/extensions/",
     "clientLibrary": "/src/neutralino.js",

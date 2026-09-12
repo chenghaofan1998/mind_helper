@@ -7,7 +7,7 @@ src/neutralino.d.ts
 .DS_Store
 Thumbs.db
 
-# 构建产物（本地输出，Windows 侧 npm run desktop:pilot 生成）
+# 构建产物（本地输出，由测试、Web、服务和 Windows 打包链生成）
 dist/
 dist-native/
 web-dist/

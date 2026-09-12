@@ -1,5 +1,5 @@
 param(
-  [string]$Name = "CommandPocketNative"
+  [string]$Name = "ActionPocketLauncher"
 )
 
 $ErrorActionPreference = "Stop"

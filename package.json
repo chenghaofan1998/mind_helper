@@ -1,5 +1,5 @@
 {
-  "name": "command-pocket-mvp",
+  "name": "action-pocket",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -14,16 +14,11 @@
     "icon:generate": "node scripts/generate-app-icon.mjs",
     "design:generate": "node design/generate-gpt-image-2.mjs",
     "design:generate:svg": "node design/generate-ui-mocks.mjs",
-    "desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1",
     "desktop:web": "npm run build && neu run",
     "desktop:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1 -Name ActionPocketLauncher",
-    "desktop:package": "npm run desktop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-native-release.ps1",
     "desktop:web-package": "npm run neutralino:ensure && npm run build && npm run server:build && npm run desktop:launcher && neu build --release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-release.ps1",
     "neutralino:ensure": "node scripts/ensure-neutralino-runtime.cjs",
-    "neutralino:update": "neu update",
-    "desktop:pilot": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1 -Name CommandPocketPilot",
-    "ap:test": "tsc -p actionpocket/tsconfig.json && node --test \"actionpocket/dist/test/*.test.js\"",
-    "ap:simulate": "tsc -p actionpocket/tsconfig.json && node actionpocket/dist/scripts/simulate-pilot.js"
+    "neutralino:update": "neu update"
   },
   "devDependencies": {
     "@neutralinojs/lib": "^6.8.0",

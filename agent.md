@@ -1,44 +1,25 @@
-# agent.md — 本仓库协作约定（Command Pocket）
+# agent.md — Action Pocket 仓库协作约定
 
-> 本文档是本工作区（/workspace，对应 F:\txt_parter）内后续开发必须遵守的版本管理约定。
-> 每次改动都按此规则归档，保证任何一步可回退、可在 GitHub 追溯。
+## 产品与范围
 
-## 仓库信息
+- 产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为最高依据。
+- 当前实现是根目录下的 Web UI、本机服务、知识源 Connector、Logseq 文件型 Graph 接入与意图路由。
+- Windows 桌面链由 `native/ActionPocketLauncher.cs`、Neutralino 配置及 `scripts/prepare-windows-release.ps1` 组成。
+- 不执行用户查询出的命令，不把派生内容伪装成知识源原文，不默认采集剪贴板、屏幕、键盘或麦克风。
 
-- 远端：`git@github.com:chenghaofan1998/mind_helper.git`（SSH，origin）
-- 默认分支：`main`
-- 身份：`chenghaofan1998 <chenghaofan1998@users.noreply.github.com>`（仓库级已配置）
+## 变更规则
 
-## 铁律
-
-1. **模块化改动 → 本地 Git 提交**：完成一个内聚的模块/修一个 bug/调一段逻辑后，立刻 `git add -A && git commit`，不积压、不跨功能混提。
-2. **功能改动完成 → 上传 GitHub**：一个功能点完整落地并验证通过后，`git push`。
-3. **提交信息规范**（简短中文，一行，`动词 + 对象 + 关键点`）：
-   - `P1: 卡片数据模型收敛为 product/kind/aliases，jsonl 存储 + v1 自动迁移`
-   - `修复: ManagerForm 分栏在构造函数设 MinSize 导致 SplitterDistance 越界`
-   - `导入: 预览改为左侧清单 + 右侧字段化编辑表单`
-4. **大改动拆提交**：如果一次改动跨多个模块，按模块拆成多个 commit，方便单独回退。
-5. **绝不提交**：
-   - 任何 Token / 密钥 / 密码（推 GitHub 前检查）
-   - 用户本地数据（%APPDATA%\CommandPocketNative\ 下的 jsonl / 备份，属运行数据不进仓库）
-   - node_modules、临时文件（.gitignore 已覆盖）
-6. **提交前自检**：`git status` 确认只含预期文件；`git diff` 扫一眼；SelfTest 通过后再提交功能改动。
-7. **推送失败先诊断**：SSH key 是否可用（`ssh -T git@github.com`）；网络/代理；不要为绕过认证把凭据写进 URL 留在 remote。
-
-## 标准流程（每次功能迭代）
+1. 保持改动窄且可验证；不在未批准时扩大产品或架构范围。
+2. 不提交 Token、密钥、密码、用户知识库内容、本地运行数据、依赖目录或可重建产物。
+3. 只有在任务明确要求时才创建提交或推送；操作前检查差异与仓库状态。
+4. 当前验证入口为：
 
 ```bash
-# 1. 开发（改代码 + 本地验证：Roslyn parse / SelfTest 逻辑副本）
-# 2. 模块完成 → 本地提交
-cd /workspace
-git add -A
-git commit -m "功能: 一句话说明"
-# 3. 功能整体验证通过 → 推送（本环境无 GitHub 凭据时，交用户在 F:\txt_parter 执行）
-git push
+npm test
+npm run typecheck
+npm run build
+npm run server:build
+git diff --check
 ```
 
-## 当前状态（2026 基线）
-
-- 已入库：源码(native/scripts/src) + 文档(docs/MASTER、MVP、ACCEPTANCE) + README + agent.md + .gitignore
-- 数据文件（cards.jsonl/profiles.json）在 %APPDATA%，不进库
-- 主交付 = native C# WinForms（CommandPocketNative.cs），详见 docs/MASTER.md
+Windows 启动器、热键、托盘和发布包还需按 [`docs/P0-RELEASE-CHECKLIST.md`](docs/P0-RELEASE-CHECKLIST.md) 在真机验收。
