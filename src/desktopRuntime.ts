@@ -1,4 +1,5 @@
 import { events, init, window as neutralinoWindow } from "@neutralinojs/lib";
+import { attemptDesktopHide } from "./desktopRuntimeState";
 
 interface DesktopCallbacks {
   onPinnedChange(value: boolean): void;
@@ -30,7 +31,15 @@ export async function showDesktopWindow(): Promise<void> {
 }
 
 export async function hideDesktopWindow(): Promise<void> {
-  if (nativeRuntime) await neutralinoWindow.hide();
+  if (!nativeRuntime) return;
+  const hidden = await attemptDesktopHide(
+    () => neutralinoWindow.hide(),
+    (error) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      callbacks?.onError(`Esc 隐藏失败：${detail}。请使用窗口 X、系统托盘或 Ctrl+Alt+P。`);
+    },
+  );
+  if (!hidden) nativeRuntime = false;
 }
 
 export function isDesktopRuntime(): boolean {
@@ -38,20 +47,29 @@ export function isDesktopRuntime(): boolean {
 }
 
 function connectDesktopRuntime(nextCallbacks: DesktopCallbacks): boolean {
-  if (initialized || !hasNativeBridge()) return initialized;
-  initialized = true;
-  nativeRuntime = true;
   callbacks = nextCallbacks;
-  init();
-  void events.on("windowClose", () => {
-    void hideDesktopWindow().catch((error) => nextCallbacks.onError(`隐藏窗口失败：${String(error)}`));
+  if (nativeRuntime) return true;
+  if (initialized || !hasNativeBridge()) return false;
+  initialized = true;
+  void events.on("ready", () => { nativeRuntime = true; });
+  void events.on("serverOffline", () => {
+    nativeRuntime = false;
+    callbacks?.onError("桌面桥接已断开；请使用窗口 X、系统托盘或 Ctrl+Alt+P。");
   });
-  return true;
+  try {
+    init();
+  } catch (error) {
+    initialized = false;
+    const detail = error instanceof Error ? error.message : String(error);
+    nextCallbacks.onError(`桌面桥接连接失败：${detail}。请使用窗口 X、系统托盘或 Ctrl+Alt+P。`);
+  }
+  return nativeRuntime;
 }
 
 export function initializeDesktopRuntime(nextCallbacks: DesktopCallbacks): void {
   if (connectDesktopRuntime(nextCallbacks)) return;
   window.setTimeout(() => {
-    if (!connectDesktopRuntime(nextCallbacks)) nextCallbacks.onError("桌面桥接未就绪；仍可从系统托盘退出。" );
+    if (!nativeRuntime) connectDesktopRuntime(nextCallbacks);
+    if (!nativeRuntime) nextCallbacks.onError("桌面桥接未就绪；请使用窗口 X、系统托盘或 Ctrl+Alt+P。" );
   }, 250);
 }

@@ -2,7 +2,7 @@
 
 ## 1. 结论与使用顺序
 
-**P0 的记入、查询、原文结果、危险复制确认已经生成 10 张 v2 状态图，不继续扩展知识中台。** 这些 PNG 仅用于视觉评审，不能直接作界面或文案验收基准。
+**P0 的记入、查询、原文结果、危险复制确认已有 10 张旧色探索图，不继续扩展知识中台。** 这些 PNG 生成于蓝灰 token 更新前，不属于当前视觉链，也不能直接作界面或文案验收基准；当前颜色以本文件色板、`gpt-image-2-prompts.json` 与 `ui/*.svg` 为准。
 
 生成前依次阅读：
 
@@ -27,7 +27,7 @@
 
 ## 2. 历史 v1 成图评审：问题 → 后续约束
 
-以下观察对应已移除的历史 v1 01–10 原图。原图不再保留，但问题记录继续约束当前 v2 状态图及后续实现。
+以下观察对应已移除的历史 v1 01–10 原图。原图不再保留，但问题记录继续约束下一次按当前 token 生成的状态图及后续实现。
 
 | 原图 | 可见问题与影响 | 下一轮必须修改 |
 |---|---|---|
@@ -45,7 +45,7 @@
 ### 跨图共性问题
 
 - **产品身份漂移**：叶子、豆形、字母 A 等 Logo、标语、窗框和导航反复变化。统一一个简单 AP 字标，不在逐页生成时重新设计品牌。
-- **同色不等于同一产品**：统一外壳、字号、间距和控件位置，不能仅要求“墨绿、高级感”。
+- **同色不等于同一产品**：统一外壳、字号、间距和控件位置，不能仅要求“深石板、高级感”。
 - **状态覆盖不足**：多数只画填满内容的成功态，没有可靠写入、检索失败、来源失效和复制失败的恢复路径。
 - **尺寸概念混淆**：PNG 输出画布不是产品视口；不能靠扩大页面塞进所有信息，再宣称它是 560×680 小窗。
 - **提示词本身在扩张范围**：旧提示词要求三层输出、负反馈、六项后台导航和未来观察；仅修 Brief 不会自动改变生图脚本的输入。
@@ -90,7 +90,7 @@ P1 的状态顺序必须明确：
 - 标题栏 40px；“记入 / 查询”切换区 40px；页脚操作区 56px；主体内边距 16px。信息超出时仅主体滚动，主操作与错误摘要仍可找到；不扩大视口、不无限缩字。
 - 只有“记入 / 查询”两个意图入口。结果仍属于查询；危险确认仍属于结果。设置用一个次要入口，不另造知识库、笔记、灵感、精选、统计或历史模块。
 - 固定 AP 字标、Action Pocket 名称、Windows 窗口控件。标题栏置顶按钮与结果“固定”分离：前者控制窗口，后者固定来源引用。
-- 色板：深色壳 `#183A32`、主色 `#276B5D`、浅底 `#FAFAF7`、正文 `#202823`、次正文 `#53635C`、危险 `#C54B43`。`#43B69B` 只作点缀，不承载小号白字。
+- 色板：深石板壳 `#1F2937`、可访问蓝主色 `#2563EB`、浅灰底 `#EEF1F5`、内容面 `#F8FAFC`、正文 `#172033`、次正文 `#526071`、危险 `#C54B43`。浅蓝 `#60A5FA` 只作点缀，不承载小号白字；焦点与成功态均使用蓝色，不使用绿色。
 - 字体：中文优先思源黑体或系统无衬线；正文 14px/22px，辅助 12px/18px，页标题 18px/26px；命令使用等宽字体。
 - 间距以 8px 为主；容器圆角 12px、控件 8px；控件高度 32–36px；线性图标 16–20px。少量阴影，不用大插画、标语卡和渐变装饰。
 - 普通文字对比度目标 ≥4.5:1，焦点/控件边界 ≥3:1；状态同时使用文字，不只依赖红绿颜色。实际值由结构稿/组件测量，不能凭 PNG 声称通过无障碍验收。
@@ -148,7 +148,7 @@ P1 的状态顺序必须明确：
 Design one production-feasible Action Pocket desktop utility state, not a marketing page.
 Use the same AP wordmark, Windows shell, two intent tabs 记入 / 查询, typography and controls across all screens.
 Show a complete 560x680 logical window centered at its original aspect ratio on a 1536x1024 canvas.
-Use graphite green #183A32, warm off-white #FAFAF7, primary #276B5D and legible Chinese text.
+Use deep slate #1F2937, neutral light gray #EEF1F5, accessible blue #2563EB and legible Chinese text.
 Compact title bar, 16px content padding, 14px body text, restrained 8px spacing, minimal shadows.
 One primary action per state. Source excerpts dominate results. Copy only, never execute.
 Use only the supplied fixture copy and supported facts. Keep input intact in failure states.

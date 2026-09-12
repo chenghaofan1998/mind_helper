@@ -2,7 +2,7 @@
 
 > 状态：MVP 产品形态与连接器设计基线。实现仍以 `docs/ACTION-POCKET-CHARTER.md` 为最高约束。
 >
-> ⚠️ **`generated/` 里的原型图是探索素材，不是验收清单。** 首版实际做什么，以 [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md) 为准。
+> ⚠️ **`generated/` 里的 PNG 是蓝灰 token 更新前的历史探索素材，不是当前视觉或验收清单。** 当前颜色以本页 token、`gpt-image-2-prompts.json` 和重新生成的 `ui/*.svg` 为准；首版实际做什么，以 [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md) 为准。
 
 ## 结论
 
@@ -13,7 +13,7 @@ Action Pocket 是一个**小窗 + 后台**的知识行动入口：小窗负责�
 | 文件 | 用途 |
 |---|---|
 | `IMPLEMENTATION-NOTES.md` | **范围权威**：逐图「保留 / 简化 / 不做」注记与阶段验收 |
-| `generated/gpt-image-2/*.png` | P0 四个任务的 10 张 v2 状态图，仅供评审与参考 |
+| `generated/gpt-image-2/*.png` | P0 四个任务的 10 张旧色状态图，仅作历史探索，不属于当前视觉链 |
 | `ui/*.svg` | 8 张可编辑结构稿，用于约束布局，非最终视觉 |
 | `gpt-image-2-prompts.json` | P0 四个任务的 10 条主态/异常态提示词，输出使用 v2 文件名 |
 | `generate-gpt-image-2.mjs` | 固定使用 `gpt-image-2` 的正式生图脚本 |
@@ -39,8 +39,8 @@ OPENAI_API_KEY=*** npm run design:generate -- --only=01-quick-capture-v2-default
 ## 视觉方向
 
 - **气质**：安静、可信、克制，不做聊天机器人，也不做复杂知识库后台。
-- **主色**：墨绿 `#276B5D`；强调色 `#43B69B`；危险色 `#C54B43`。
-- **表面**：深墨背景 + 浅色内容卡，突出原文而非装饰。
+- **权威设计 token**：深石板壳 `#1F2937`；可访问蓝主色 `#2563EB`；浅蓝强调 `#60A5FA`；浅灰底 `#EEF1F5`；内容面 `#F8FAFC`；正文 `#172033`；次正文 `#526071`；危险色 `#C54B43`。
+- **表面**：深石板背景 + 中性浅灰内容卡，突出原文而非装饰；成功/焦点沿用蓝色，不使用绿色阴影或状态。
 - **尺寸**：小窗设计基准 560×680；后台设计基准 1280×820。
 - **信息层级**：当前意图 > 原文结果 > 来源定位 > 派生说明 > 次要操作。
 

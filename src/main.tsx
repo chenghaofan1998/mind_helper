@@ -109,7 +109,8 @@ function renderRecord(): string {
       <button class="text-button" type="button" data-action="edit-target" ${busy ? "disabled" : ""}>${editingTarget ? "收起" : "更改"}</button>
     </section>
     ${renderTargetEditor()}
-    ${!loading && !errorMessage && !sources.some((item) => item.capabilities.includes("write")) ? `<div class="inline-state error" role="alert"><b>!</b><span>没有可写知识源。请在设置中连接支持写入的知识源；当前输入会保留。</span></div>` : ""}
+    ${!loading && !errorMessage && sources.length === 0 ? `<div class="inline-state unconfigured"><b>i</b><span>尚未配置知识源。连接后即可保存；当前输入会保留。</span></div>` : ""}
+    ${!loading && !errorMessage && sources.length > 0 && !sources.some((item) => item.capabilities.includes("write")) ? `<div class="inline-state error" role="alert"><b>!</b><span>已连接的知识源不支持写入；当前输入会保留。</span></div>` : ""}
     ${errorMessage ? `<div class="inline-state error" role="alert"><b>!</b><span>${escapeHtml(errorMessage)}</span></div>` : ""}
     ${successReceipt?.ok ? `<section class="saved-confirmation" role="status">
       <header><b>✓ 刚刚保存的原文</b><span>${escapeHtml(locationLabel(successReceipt.location))}</span></header>
@@ -161,6 +162,7 @@ function renderResult(result: KnowledgeResult, index: number): string {
 
 function renderQueryState(): string {
   if (loading) return `<div class="query-state" role="status"><b>正在连接知识源…</b><span>连接完成前不会发送问题。</span></div>`;
+  if (!sources.length && !errorMessage) return `<div class="query-state"><b>尚未配置知识源</b><span>连接知识源后即可查询；这不是连接故障。</span><button data-action="settings">查看配置方式</button></div>`;
   if (errorMessage) return `<div class="query-state error" role="alert"><b>知识源暂不可用</b><span>${escapeHtml(errorMessage)} 问题已保留。</span><button data-action="settings">打开设置</button></div>`;
   if (busy) return `<div class="query-state" role="status"><b>正在查询知识源…</b><span>问题会保留到查询完成。</span></div>`;
   if (results.length) return `<div class="results" aria-label="查询结果">${results.map(renderResult).join("")}</div>`;
@@ -335,7 +337,7 @@ function selectMode(nextMode: Mode): void {
   if (!activeSource()?.capabilities.includes(capability)) sourceId = sources.find((source) => source.capabilities.includes(capability))?.id ?? "";
   if (mode === "record" && !relativePath) relativePath = activeSource()?.defaultWritePath ?? "";
   if (activeSource()) errorMessage = "";
-  else if (!errorMessage) errorMessage = sources.length ? `没有支持${mode === "record" ? "写入" : "检索"}的知识源。` : "未配置知识源。";
+  else if (!errorMessage && sources.length) errorMessage = `已连接的知识源不支持${mode === "record" ? "写入" : "检索"}。`;
   successReceipt = null; updateDraft(); render();
 }
 
@@ -437,7 +439,7 @@ async function initialize(): Promise<void> {
       sourceId = sources.find((source) => source.capabilities.includes(requiredCapability))?.id ?? "";
     }
     if (!relativePath) relativePath = activeSource()?.defaultWritePath ?? "";
-    if (!activeSource()) errorMessage = sources.length ? `没有支持${mode === "record" ? "写入" : "检索"}的知识源。` : "未配置知识源。";
+    if (!activeSource() && sources.length) errorMessage = `已连接的知识源不支持${mode === "record" ? "写入" : "检索"}。`;
   } catch (error) { errorMessage = error instanceof Error ? error.message : "无法连接知识源。"; }
   finally { loading = false; render(); }
 }

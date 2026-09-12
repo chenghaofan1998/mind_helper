@@ -21,16 +21,33 @@ namespace ActionPocketLauncher
                 return;
             }
 
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            try
+            bool ownsInstance = false;
+            using (Mutex instanceMutex = new Mutex(false, @"Local\ActionPocket.Launcher"))
             {
-                string graphDirectory = GraphConfiguration.Resolve(args);
-                Application.Run(new LauncherContext(graphDirectory));
-            }
-            catch (Exception error)
-            {
-                MessageBox.Show(error.Message, "Action Pocket 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                try
+                {
+                    try { ownsInstance = instanceMutex.WaitOne(0, false); }
+                    catch (AbandonedMutexException) { ownsInstance = true; }
+                    if (!ownsInstance)
+                        return;
+
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    try
+                    {
+                        string graphDirectory = GraphConfiguration.Resolve(args);
+                        Application.Run(new LauncherContext(graphDirectory));
+                    }
+                    catch (Exception error)
+                    {
+                        MessageBox.Show(error.Message, "Action Pocket 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                finally
+                {
+                    if (ownsInstance)
+                        instanceMutex.ReleaseMutex();
+                }
             }
         }
 
@@ -130,41 +147,69 @@ namespace ActionPocketLauncher
 
     internal sealed class LauncherContext : ApplicationContext
     {
+        private const int SwHide = 0;
+        private const int SwShow = 5;
+        private const int SwRestore = 9;
+        private const int StableShowTicksRequired = 2;
+        private const int ServiceStartAttempts = 3;
+
+        private readonly string root;
+        private readonly int port;
         private readonly Process service;
-        private readonly Process shell;
         private readonly HotkeyWindow hotkey;
         private readonly NotifyIcon tray;
         private readonly System.Windows.Forms.Timer monitor;
+        private Process shell;
+        private bool showRequested;
+        private int stableShowTicks;
         private bool stopping;
+
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr window);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr window);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr window, int command);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr window);
 
         public LauncherContext(string graphDirectory)
         {
-            service = null;
+            root = AppDomain.CurrentDomain.BaseDirectory;
+            RunningService runningService = StartReadyService(root, graphDirectory);
+            port = runningService.Port;
+            service = runningService.Process;
             shell = null;
             hotkey = null;
             tray = null;
             monitor = null;
             try
             {
-                string root = AppDomain.CurrentDomain.BaseDirectory;
-                int port = PortReservation.FindAvailable();
-                service = StartService(root, graphDirectory, port);
-                WaitUntilReady(service, port, TimeSpan.FromSeconds(10));
                 shell = StartShell(root, port);
 
-                hotkey = new HotkeyWindow(shell);
+                hotkey = new HotkeyWindow(ToggleShell);
                 if (!hotkey.Register())
-                    MessageBox.Show("Ctrl+Alt+P 注册失败，可能已被其他程序占用。仍可通过托盘打开 Action Pocket。", "Action Pocket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Ctrl+Alt+P 注册失败，可能已被其他程序占用。仍可通过托盘显示 Action Pocket。", "Action Pocket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
                 tray = new NotifyIcon();
                 tray.Icon = SystemIcons.Application;
-                tray.Text = "Action Pocket";
+                tray.Text = "Action Pocket（双击显示）";
                 tray.ContextMenuStrip = BuildTrayMenu();
-                tray.DoubleClick += delegate { hotkey.ShowShell(); };
+                tray.DoubleClick += delegate { RequestShowShell(); };
                 tray.Visible = true;
+                if (FirstRunNotice.TryMarkShown())
+                {
+                    tray.BalloonTipTitle = "Action Pocket 正在托盘运行";
+                    tray.BalloonTipText = "关闭或最小化窗口后，可双击托盘图标或按 Ctrl+Alt+P 再次显示。";
+                    tray.BalloonTipIcon = ToolTipIcon.Info;
+                    tray.ShowBalloonTip(3000);
+                }
 
                 monitor = new System.Windows.Forms.Timer();
-                monitor.Interval = 1000;
+                monitor.Interval = 250;
                 monitor.Tick += CheckProcesses;
                 monitor.Start();
             }
@@ -186,17 +231,43 @@ namespace ActionPocketLauncher
         private ContextMenuStrip BuildTrayMenu()
         {
             ContextMenuStrip menu = new ContextMenuStrip();
-            menu.Items.Add("打开 Action Pocket", null, delegate { hotkey.ShowShell(); });
-            menu.Items.Add("隐藏窗口", null, delegate { hotkey.HideShell(); });
+            menu.Items.Add("显示 Action Pocket", null, delegate { RequestShowShell(); });
+            menu.Items.Add("隐藏 Action Pocket", null, delegate { HideShell(); });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出", null, delegate { ExitThread(); });
+            menu.Items.Add("退出 Action Pocket", null, delegate { ExitThread(); });
             return menu;
+        }
+
+        private static RunningService StartReadyService(string root, string graphDirectory)
+        {
+            Exception lastError = null;
+            for (int attempt = 1; attempt <= ServiceStartAttempts; attempt++)
+            {
+                int candidatePort = PortReservation.FindAvailable();
+                Process candidate = StartService(root, graphDirectory, candidatePort);
+                try
+                {
+                    WaitUntilReady(candidate, candidatePort, TimeSpan.FromSeconds(10));
+                    return new RunningService(candidate, candidatePort);
+                }
+                catch (InvalidOperationException error)
+                {
+                    lastError = error;
+                    Stop(candidate);
+                }
+                catch (TimeoutException error)
+                {
+                    lastError = error;
+                    Stop(candidate);
+                }
+            }
+            throw new InvalidOperationException("知识源服务在重新选择端口后仍无法启动。", lastError);
         }
 
         private static Process StartService(string root, string graphDirectory, int port)
         {
             string appDirectory = Path.Combine(root, "app");
-            string node = Path.Combine(root, "runtime", "node.exe");
+            string node = Path.Combine(appDirectory, "runtime", "node.exe");
             string entry = Path.Combine(appDirectory, "server-dist", "server", "app.js");
             RequireFile(node, "缺少内置 Node 运行时");
             RequireFile(entry, "缺少知识源服务");
@@ -214,10 +285,12 @@ namespace ActionPocketLauncher
 
         private static Process StartShell(string root, int port)
         {
-            string executable = Path.Combine(root, "ActionPocketShell.exe");
+            string shellDirectory = Path.Combine(root, "app", "shell");
+            string executable = Path.Combine(shellDirectory, "ActionPocketShell.exe");
             RequireFile(executable, "缺少桌面壳");
+            RequireFile(Path.Combine(shellDirectory, "resources.neu"), "缺少桌面壳资源");
             ProcessStartInfo start = new ProcessStartInfo(executable, "--url=http://127.0.0.1:" + port);
-            start.WorkingDirectory = root;
+            start.WorkingDirectory = shellDirectory;
             start.UseShellExecute = false;
             return Process.Start(start);
         }
@@ -236,8 +309,15 @@ namespace ActionPocketLauncher
                     request.Timeout = 500;
                     request.AllowAutoRedirect = false;
                     using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    {
                         if (response.StatusCode == HttpStatusCode.OK)
+                        {
+                            Thread.Sleep(100);
+                            if (process.HasExited)
+                                throw new InvalidOperationException("知识源服务启动失败，退出码：" + process.ExitCode);
                             return;
+                        }
+                    }
                 }
                 catch (WebException) { }
                 Thread.Sleep(100);
@@ -249,16 +329,135 @@ namespace ActionPocketLauncher
         {
             if (stopping)
                 return;
-            if (shell.HasExited)
-            {
-                ExitThread();
-                return;
-            }
-            if (service.HasExited)
+            if (HasExited(service))
             {
                 MessageBox.Show("知识源服务意外退出，Action Pocket 将关闭。", "Action Pocket", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 ExitThread();
+                return;
             }
+            if (shell != null && HasExited(shell))
+            {
+                bool restart = showRequested;
+                shell.Dispose();
+                shell = null;
+                stableShowTicks = 0;
+                if (restart)
+                    RequestShowShell();
+                return;
+            }
+
+            IntPtr handle = FindShellWindow();
+            if (handle == IntPtr.Zero)
+            {
+                stableShowTicks = 0;
+                return;
+            }
+            if (IsIconic(handle))
+            {
+                if (showRequested)
+                {
+                    ShowWindow(handle, SwRestore);
+                    SetForegroundWindow(handle);
+                    stableShowTicks = 0;
+                }
+                else
+                {
+                    ShowWindow(handle, SwHide);
+                }
+                return;
+            }
+            if (showRequested)
+            {
+                ShowWindow(handle, SwShow);
+                SetForegroundWindow(handle);
+                if (IsWindowVisible(handle) && !HasExited(shell))
+                {
+                    stableShowTicks++;
+                    if (stableShowTicks >= StableShowTicksRequired)
+                    {
+                        showRequested = false;
+                        stableShowTicks = 0;
+                    }
+                }
+                else
+                {
+                    stableShowTicks = 0;
+                }
+            }
+        }
+
+        private void ToggleShell()
+        {
+            IntPtr handle = FindShellWindow();
+            if (handle != IntPtr.Zero && IsWindowVisible(handle) && !IsIconic(handle))
+                HideShell();
+            else
+                RequestShowShell();
+        }
+
+        private void RequestShowShell()
+        {
+            if (stopping)
+                return;
+            try
+            {
+                EnsureShellStarted();
+                showRequested = true;
+                stableShowTicks = 0;
+                IntPtr handle = FindShellWindow();
+                if (handle != IntPtr.Zero)
+                {
+                    ShowWindow(handle, IsIconic(handle) ? SwRestore : SwShow);
+                    SetForegroundWindow(handle);
+                }
+            }
+            catch (Exception error)
+            {
+                showRequested = false;
+                stableShowTicks = 0;
+                MessageBox.Show(error.Message, "Action Pocket 窗口启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void HideShell()
+        {
+            showRequested = false;
+            stableShowTicks = 0;
+            IntPtr handle = FindShellWindow();
+            if (handle != IntPtr.Zero)
+                ShowWindow(handle, SwHide);
+        }
+
+        private void EnsureShellStarted()
+        {
+            if (shell != null && !HasExited(shell))
+                return;
+            if (shell != null)
+            {
+                shell.Dispose();
+                shell = null;
+            }
+            shell = StartShell(root, port);
+        }
+
+        private IntPtr FindShellWindow()
+        {
+            if (shell == null || HasExited(shell))
+                return IntPtr.Zero;
+            try
+            {
+                shell.Refresh();
+                return shell.MainWindowHandle;
+            }
+            catch (InvalidOperationException) { return IntPtr.Zero; }
+        }
+
+        private static bool HasExited(Process process)
+        {
+            if (process == null)
+                return true;
+            try { return process.HasExited; }
+            catch (InvalidOperationException) { return true; }
         }
 
         protected override void ExitThreadCore()
@@ -317,6 +516,37 @@ namespace ActionPocketLauncher
             if (!Directory.Exists(path))
                 throw new DirectoryNotFoundException(message + "：" + path);
         }
+
+        private sealed class RunningService
+        {
+            public readonly Process Process;
+            public readonly int Port;
+
+            public RunningService(Process process, int port)
+            {
+                Process = process;
+                Port = port;
+            }
+        }
+    }
+
+    internal static class FirstRunNotice
+    {
+        public static bool TryMarkShown()
+        {
+            try
+            {
+                string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ActionPocket");
+                string marker = Path.Combine(directory, "tray-notice-shown");
+                if (File.Exists(marker))
+                    return false;
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(marker, DateTime.UtcNow.ToString("O"));
+                return true;
+            }
+            catch (IOException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
+        }
     }
 
     internal static class PortReservation
@@ -336,9 +566,7 @@ namespace ActionPocketLauncher
         private const int HotkeyId = 0x4150;
         private const int ModAlt = 0x0001;
         private const int ModControl = 0x0002;
-        private const int SwHide = 0;
-        private const int SwShow = 5;
-        private readonly Process shell;
+        private readonly Action toggleShell;
         private bool registered;
 
         [DllImport("user32.dll")]
@@ -347,18 +575,9 @@ namespace ActionPocketLauncher
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr window, int id);
 
-        [DllImport("user32.dll")]
-        private static extern bool IsWindowVisible(IntPtr window);
-
-        [DllImport("user32.dll")]
-        private static extern bool ShowWindow(IntPtr window, int command);
-
-        [DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr window);
-
-        public HotkeyWindow(Process shellProcess)
+        public HotkeyWindow(Action toggleShellAction)
         {
-            shell = shellProcess;
+            toggleShell = toggleShellAction;
             CreateHandle(new CreateParams());
         }
 
@@ -371,47 +590,8 @@ namespace ActionPocketLauncher
         protected override void WndProc(ref Message message)
         {
             if (message.Msg == WmHotkey && message.WParam.ToInt32() == HotkeyId)
-                ToggleShell();
+                toggleShell();
             base.WndProc(ref message);
-        }
-
-        public void ToggleShell()
-        {
-            IntPtr handle = FindMainWindow();
-            if (handle == IntPtr.Zero)
-                return;
-            if (IsWindowVisible(handle)) HideShell();
-            else ShowShell();
-        }
-
-        public void ShowShell()
-        {
-            IntPtr handle = FindMainWindow();
-            if (handle == IntPtr.Zero)
-                return;
-            ShowWindow(handle, SwShow);
-            SetForegroundWindow(handle);
-        }
-
-        public void HideShell()
-        {
-            IntPtr handle = FindMainWindow();
-            if (handle != IntPtr.Zero)
-                ShowWindow(handle, SwHide);
-        }
-
-        private IntPtr FindMainWindow()
-        {
-            try
-            {
-                shell.Refresh();
-                if (shell.MainWindowHandle != IntPtr.Zero)
-                    return shell.MainWindowHandle;
-                shell.WaitForInputIdle(1000);
-                shell.Refresh();
-                return shell.MainWindowHandle;
-            }
-            catch (InvalidOperationException) { return IntPtr.Zero; }
         }
 
         public void Dispose()

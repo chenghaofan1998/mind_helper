@@ -37,10 +37,10 @@
       "borderless": false,
       "maximize": false,
       "hidden": false,
-      "skipTaskbar": true,
+      "skipTaskbar": false,
       "resizable": true,
       "enableInspector": false,
-      "exitProcessOnClose": false
+      "exitProcessOnClose": true
     }
   },
   "cli": {
