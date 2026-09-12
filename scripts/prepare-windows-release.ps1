@@ -57,7 +57,7 @@ $instructions = @(
     ""
     "1. Run ActionPocket.exe. Do not run files inside the app directory."
     "2. Double-click the tray icon or press Ctrl+Alt+P to show the window again."
-    "3. Use the tray menu to add a folder project or one .md/.markdown file project."
+    "3. Use the tray menu '设置…' to add or edit projects in a separate settings window."
     "4. The compact Current Project selector scopes every search and write."
     "5. Use 'Exit Action Pocket' in the tray menu to stop the app and local knowledge service."
     ""

@@ -5,6 +5,7 @@ import { loadDraft, loadProjectDraft, saveDraft } from "./draftStore";
 import { focusRiskReturnTarget, focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import type { RiskReturnKind, RiskReturnTarget } from "./focusTrap";
 import { applyExplicitMode, localRoute } from "./knowledge/intentRouter";
+import { projectSwitcherModel, TRAY_SETTINGS_HINT } from "./layout";
 import { listProjects, listSources, locateKnowledge, searchKnowledge, writeKnowledge } from "./knowledge/client";
 import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, SearchIntent, SourceDescriptor, SourceLocation, WriteReceipt } from "./knowledge/types";
 import { nextResultIndex, resultKeyboardAction } from "./resultNavigation";
@@ -86,8 +87,13 @@ function renderTabs(): string {
 }
 
 function renderProjectSwitcher(): string {
-  const options = projects.map((project) => `<option value="${escapeHtml(project.id)}" ${project.id === projectId ? "selected" : ""}>${escapeHtml(project.name)}</option>`).join("");
-  return `<div class="project-switcher"><label for="project-select">当前项目</label><select id="project-select" ${busy || !projects.length ? "disabled" : ""}>${options || '<option value="">尚未添加项目</option>'}</select><button type="button" data-action="settings" aria-label="添加项目">＋</button></div>`;
+  const model = projectSwitcherModel(projects, projectId);
+  if (model.kind === "empty") return "";
+  if (model.kind === "single") {
+    return `<div class="project-switcher single"><span class="project-switcher-label">${model.label}</span><span class="project-chip" title="${escapeHtml(model.name)}">${escapeHtml(model.name)}</span></div>`;
+  }
+  const options = model.options.map((option) => `<option value="${escapeHtml(option.id)}" ${option.selected ? "selected" : ""}>${escapeHtml(option.name)}</option>`).join("");
+  return `<div class="project-switcher"><label for="project-select">${model.label}</label><select id="project-select" ${busy ? "disabled" : ""}>${options}</select></div>`;
 }
 
 function renderSourceOptions(requireWrite = false): string {
@@ -104,27 +110,35 @@ function renderTargetEditor(): string {
   </div>`;
 }
 
-function renderRecord(): string {
-  const source = activeSource();
+function renderRecordInput(): string {
   const targetPath = effectiveTargetPath();
-  const canWrite = canSubmitWrite(rawContent, relativePath, source);
-  return `<form id="record-form" class="intent-panel record-panel">
+  const project = activeProject();
+  return `<form id="record-form" class="intent-form record-form">
     <label class="sr-only" for="raw-content">原始内容</label>
     <textarea class="record-input" id="raw-content" maxlength="262144" required placeholder="输入或粘贴想保存的原始内容…" ${busy ? "disabled" : ""}>${escapeHtml(rawContent)}</textarea>
     <section class="target-card" aria-label="写入位置">
-      <span><strong>${escapeHtml(activeProject()?.name ?? "未配置项目")}</strong> · ${escapeHtml(targetPath || "未设置写入位置")}</span>
-      <button class="text-button" type="button" data-action="edit-target" ${busy ? "disabled" : ""}>${editingTarget ? "收起" : "更改"}</button>
+      <span><strong>${escapeHtml(project?.name ?? "未配置项目")}</strong> · ${escapeHtml(targetPath || "未设置写入位置")}</span>
+      ${project ? `<button class="text-button" type="button" data-action="edit-target" ${busy ? "disabled" : ""}>${editingTarget ? "收起" : "更改"}</button>` : ""}
     </section>
+  </form>`;
+}
+
+function renderRecordBody(): string {
+  return `<div class="record-body">
     ${renderTargetEditor()}
-    ${!loading && !errorMessage && projects.length === 0 ? `<div class="inline-state unconfigured"><b>i</b><span>尚未添加项目。当前输入会保留。</span><button type="button" data-action="settings">添加项目</button></div>` : ""}
+    ${!loading && !errorMessage && projects.length === 0 ? `<div class="inline-state unconfigured"><b>i</b><span>${escapeHtml(TRAY_SETTINGS_HINT)}</span></div>` : ""}
     ${!loading && !errorMessage && activeProject() && !activeProject()?.sourceIds.some((id) => sources.find((item) => item.id === id)?.capabilities.includes("write")) ? `<div class="inline-state error" role="alert"><b>!</b><span>当前项目不支持写入；当前输入会保留。</span></div>` : ""}
     ${errorMessage ? `<div class="inline-state error" role="alert"><b>!</b><span>${escapeHtml(errorMessage)}</span></div>` : ""}
     ${successReceipt?.ok ? `<section class="saved-confirmation" role="status">
       <header><b>✓ 刚刚保存的原文</b><span>${escapeHtml(locationLabel(successReceipt.location))}</span></header>
       <blockquote>${escapeHtml(lastSavedContent)}</blockquote>
     </section>` : ""}
-    <div class="panel-actions"><button class="settings-button" type="button" data-action="settings">⚙ <span>设置</span></button><button class="primary" type="submit" ${busy || !canWrite ? "disabled" : ""}>${busy ? "正在保存…" : errorMessage ? "重试保存" : "保存到知识库"}<kbd>Ctrl+Enter</kbd></button></div>
-  </form>`;
+  </div>`;
+}
+
+function renderRecordActions(): string {
+  const canWrite = canSubmitWrite(rawContent, relativePath, activeSource());
+  return `<button id="record-submit" class="primary" type="submit" form="record-form" ${busy || !canWrite ? "disabled" : ""}>${busy ? "正在保存…" : errorMessage ? "重试保存" : "保存到知识库"}<kbd>Ctrl+Enter</kbd></button>`;
 }
 
 function renderExcerpt(result: KnowledgeResult): string {
@@ -159,25 +173,24 @@ function renderResult(result: KnowledgeResult, index: number): string {
 
 function renderQueryState(): string {
   if (loading) return `<div class="query-state" role="status"><b>正在连接知识源…</b><span>连接完成前不会发送问题。</span></div>`;
-  if (!projects.length && !errorMessage) return `<div class="query-state"><b>尚未添加项目</b><span>添加文件夹或 Markdown 文件后即可查询。</span><button data-action="settings">添加项目</button></div>`;
-  if (errorMessage) return `<div class="query-state error" role="alert"><b>项目访问失败</b><span>${escapeHtml(errorMessage)} 问题已保留。</span><button data-action="settings">打开项目设置</button></div>`;
+  if (!projects.length && !errorMessage) return `<div class="query-state" role="note"><span>${escapeHtml(TRAY_SETTINGS_HINT)}</span></div>`;
+  if (errorMessage) return `<div class="query-state error" role="alert"><b>项目访问失败</b><span>${escapeHtml(errorMessage)} 问题已保留。</span></div>`;
   if (busy) return `<div class="query-state" role="status"><b>正在查询知识源…</b><span>问题会保留到查询完成。</span></div>`;
   if (results.length) return `<div class="results" aria-label="查询结果">${results.map(renderResult).join("")}</div>`;
   if (hasSearched) return `<div class="query-state"><b>未找到相关原文</b><span>可修改问题后重试，或按知识源定位自行查找。</span></div>`;
   return `<div class="query-spacer" aria-hidden="true"></div>`;
 }
 
-function renderQuery(): string {
-  const source = activeSource();
-  const canSearch = Boolean(source?.capabilities.includes("search"));
-  return `<section class="intent-panel query-panel">
-    <form id="query-form" class="query-form">
-      <label for="query-input">现在遇到什么问题？</label>
-      <textarea id="query-input" rows="${hasSearched || busy ? 2 : 7}" maxlength="500" required placeholder="例如：我以前怎么理解 Adam 的一阶矩？" ${busy ? "disabled" : ""}>${escapeHtml(query)}</textarea>
-    </form>
-    ${renderQueryState()}
-    <div class="panel-actions"><button class="settings-button" type="button" data-action="settings">⚙ <span>设置</span></button><button class="primary" type="submit" form="query-form" ${loading || busy || !canSearch || !query.trim() ? "disabled" : ""}>${busy ? "查询中…" : errorMessage ? "重试查询" : "查询"}<kbd>Enter</kbd></button></div>
-  </section>`;
+function renderQueryInput(): string {
+  return `<form id="query-form" class="intent-form query-form">
+    <label for="query-input">现在遇到什么问题？</label>
+    <textarea id="query-input" rows="2" maxlength="500" required placeholder="例如：我以前怎么理解 Adam 的一阶矩？" ${busy ? "disabled" : ""}>${escapeHtml(query)}</textarea>
+  </form>`;
+}
+
+function renderQueryActions(): string {
+  const canSearch = Boolean(activeSource()?.capabilities.includes("search"));
+  return `<button id="query-submit" class="primary" type="submit" form="query-form" ${loading || busy || !canSearch || !query.trim() ? "disabled" : ""}>${busy ? "查询中…" : errorMessage ? "重试查询" : "查询"}<kbd>Enter</kbd></button>`;
 }
 
 function renderRiskModal(): string {
@@ -200,7 +213,15 @@ function render(): void {
   const source = activeSource();
   root.innerHTML = `<main class="pocket">
     <header class="app-header"><strong>AP</strong><span class="product-name">Action Pocket</span><span class="source-status ${source ? "ready" : ""}">${loading ? "连接中" : source?.name ?? "未配置"}</span>${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
-    ${renderTabs()}${renderProjectSwitcher()}${mode === "record" ? renderRecord() : renderQuery()}
+    <div class="shell-top">
+      ${renderTabs()}
+      ${renderProjectSwitcher()}
+      ${mode === "record" ? renderRecordInput() : renderQueryInput()}
+    </div>
+    <section class="shell-body">
+      ${mode === "record" ? renderRecordBody() : renderQueryState()}
+    </section>
+    <div class="panel-actions">${mode === "record" ? renderRecordActions() : renderQueryActions()}</div>
     <div class="toast-region" aria-live="polite"></div>${renderRiskModal()}
   </main>`;
 }
@@ -381,9 +402,9 @@ function selectMode(nextMode: Mode): void {
 }
 
 function syncSubmitButtons(): void {
-  const recordButton = root.querySelector<HTMLButtonElement>('#record-form button[type="submit"]');
+  const recordButton = root.querySelector<HTMLButtonElement>("#record-submit");
   if (recordButton) recordButton.disabled = busy || !canSubmitWrite(rawContent, relativePath, activeSource());
-  const queryButton = root.querySelector<HTMLButtonElement>('button[form="query-form"]');
+  const queryButton = root.querySelector<HTMLButtonElement>("#query-submit");
   if (queryButton) queryButton.disabled = loading || busy || !query.trim() || !activeSource()?.capabilities.includes("search");
 }
 
@@ -430,7 +451,6 @@ root.addEventListener("click", (event) => {
   const result = results.find((item) => item.id === button.dataset.id);
   if (action === "mode") selectMode(button.dataset.mode === "record" ? "record" : "query");
   else if (action === "edit-target") { editingTarget = !editingTarget; render(); }
-  else if (action === "settings") showToast(isDesktopRuntime() ? "请从系统托盘选择“添加文件夹项目”或“添加 Markdown 项目”" : "请通过 AP_PROJECTS_FILE 或 AP_GRAPH_DIR 配置项目");
   else if (action === "toggle-window-pin") void toggleDesktopPin().catch((error) => showToast(`置顶切换失败：${String(error)}`));
   else if (action === "locate" && result) void locateResult(result);
   else if (action === "copy-location" && result) void copyResultLocation(result);

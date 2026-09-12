@@ -2,7 +2,7 @@
 
 **连接知识库与日常任务的统一轻量入口：随手记进去，需要时拿出来。**
 
-当前 MVP 是一个透明无边框桌面浮窗：可在多个本地文件夹、单个 Markdown 文件项目或标准 HTTP Connector 之间切换，可靠记入原始文字并找回少量原文。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
+当前 MVP 是一个透明无边框桌面浮窗：可在多个本地文件夹、单个 Markdown 文件项目或标准 HTTP Connector 之间切换，可靠记入原始文字并找回少量原文。主窗只负责切换已配置项目、记入与查询；项目的增删改在托盘“设置…”打开的独立原生设置窗口中完成，主窗不再直接操作项目文件。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
 
 下一阶段的“小窗 + 后台”、RAG 标准连接器、多模态输入与未来观察能力设计见 [`design/`](design/README.md)；Logseq 接入和问题辨识的已实现边界见 [`docs/LOGSEQ-AND-INTENT-ROUTING.md`](docs/LOGSEQ-AND-INTENT-ROUTING.md)。
 
@@ -62,13 +62,15 @@ npm ci
 npm run desktop:web-package
 ```
 
-产物为 `dist/ActionPocket-windows-x64.zip`。包内已复制 Node 运行时、服务产物和 Web 资源；目标测试机不应再依赖预装 Node.js。`ActionPocket.exe` 不会在首次启动时强迫配置项目。可从托盘直接选择“添加文件夹项目…”或“添加 Markdown 项目…”，配置原子持久化到 `%LOCALAPPDATA%\\ActionPocket\\projects.v1.json`，随后服务与小窗会受控重启并装配全部项目。旧 `graph-path.txt` 会迁移；`--graph-dir`、`--choose-graph` 与 `AP_GRAPH_DIR` 仍保留兼容。标准 HTTP Connector 继续通过环境变量接入。
+产物为 `dist/ActionPocket-windows-x64.zip`。包内已复制 Node 运行时、服务产物和 Web 资源；目标测试机不应再依赖预装 Node.js。`ActionPocket.exe` 不会在首次启动时强迫配置项目。托盘菜单只保留“显示 / 隐藏 / 设置… / 退出”；点“设置…”打开独立原生设置窗口（WinForms，与主浮窗分离）管理项目，配置原子持久化到 `%LOCALAPPDATA%\\ActionPocket\\projects.v1.json`，随后服务与小窗会受控重启并装配全部项目。旧 `graph-path.txt` 会迁移；`--graph-dir`、`--choose-graph` 与 `AP_GRAPH_DIR` 仍保留兼容。标准 HTTP Connector 继续通过环境变量接入。
+
+设置窗口可查看项目清单、添加文件夹、添加单个 `.md`/`.markdown`、把文件夹标记为普通 Markdown 或 Logseq、重命名项目、删除项目、设置默认项目，并保存或取消。文件与目录选择框都以设置窗为 owner，不会藏到主窗后面；修改先在设置窗暂存，点击“保存”后才原子写入配置并受控重启服务与小窗，取消不改变正在运行的配置，删除最后一个项目会二次确认。启动器源码按职责拆分（项目配置/设置窗、桌面窗口与 backdrop、launcher 生命周期、服务启动、自检），`native/build.ps1` 编译 `native/*.cs` 全部源文件。
 
 构建与自动测试不能替代 Windows 热键、托盘、进程清理和启动耗时验收，执行步骤见 [`docs/P0-RELEASE-CHECKLIST.md`](docs/P0-RELEASE-CHECKLIST.md)。
 
 ## MVP 数据与能力边界
 
-- 核心以项目 `ProjectDescriptor` 作为用户可选作用域；每个项目引用一个或多个中立的 `KnowledgeSource` / `SourceDescriptor`。当前每个文件夹或单 Markdown 文件各自成为独立项目，未来 Logseq/HTTP/RAG 仍注册到同一项目列表。
+- 核心以项目 `ProjectDescriptor` 作为用户可选作用域；每个项目引用一个或多个中立的 `KnowledgeSource` / `SourceDescriptor`。当前每个文件夹或单 Markdown 文件各自成为独立项目，未来 Logseq/HTTP/RAG 仍注册到同一项目列表。主窗只切换已配置项目：单项目显示为紧凑标签，多项目显示 `select`，没有“添加项目”加号或“设置”按钮；无项目时只提示“请从系统托盘打开设置”。项目增删改全部在托盘“设置…”的独立原生窗口完成，修改保存后原子写入配置并重启服务与小窗，主窗随重载立即看到新项目。设置窗对未来标准 Connector 预留同一来源模型的扩展点，但本轮不提供可保存却不能工作的远程源表单，只显示只读说明。
 - 文件型 Graph 会递归读取 `AP_GRAPH_DIR` 多级子目录内的 `.md` / `.markdown`；拒绝绝对路径、`..` 和符号链接越界，并跳过隐藏目录、缓存及备份目录。
 - `/api/sources` 发现来源及能力；`/api/search` 返回最多 5 条原文摘录、相邻块、相对路径、1-based 行号与版本；`/api/write` 追加原始内容并在 `fsync`、回读校验后返回回执。
 - 本地 Graph 检索诚实标记为**本地词法 fallback**，未接入或伪装 embedding/rerank；标准 Connector 原样声明来源侧检索能力。查询界面保持单问题框，底层以本地规则辨识 `find/command/understanding/task/decision`。
@@ -105,4 +107,4 @@ npm run server:build
 3. 在“查询”用自然语言找回，确认结果不超过 5 条，包含相对路径、行号和上下文。
 4. 将 Graph 改为只读后再次写入，确认不显示成功且输入仍在。
 5. 查询危险命令，确认首次复制被弹窗拦截，确认后仅进入剪贴板。
-6. 添加第二个项目并切换，确认查询与写入严格落在当前项目，且结果卡只显示“打开原文/复制定位”和“复制原文/命令”。
+6. 通过托盘“设置…”添加第二个项目并保存，确认服务与小窗受控重启；在主窗切换后确认查询与写入严格落在当前项目，且结果卡只显示“打开原文/复制定位”和“复制原文/命令”。

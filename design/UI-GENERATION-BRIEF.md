@@ -61,7 +61,7 @@
 | 03 原文结果 | 找到可直接使用的一段 | 少量结果，最多 5 条、默认展开 1 条；原文与必要上下文；来源定位与版本；复制及安全打开/定位 | 无证据的新解释、派生提示大卡、相似度条、追问聊天、固定与反馈 |
 | 04 危险复制 | 知情确认后只复制 | 同一结果页背景；完整命令、来源、具体影响；取消、仍然复制；可见焦点 | 执行/运行按钮、绿色“安全命令”评级、按 Tab 直接复制 |
 
-后台设置是配套低频单页，不是新增主导航；本轮默认提示词先聚焦上述四个任务。
+后台设置是一个独立的原生 WinForms 设置窗口，不是主窗内新增导航：主窗只切换已配置项目并完成记入/查询，设置窗负责项目清单、添加文件夹、添加单个 `.md`/`.markdown`、把文件夹标记为 Markdown 或 Logseq、重命名、删除（删除最后一项需二次确认）、设置默认项目，以及保存/取消。本轮默认提示词先聚焦上述四个任务。
 
 ### P1 / P2 / 归档：不混入 P0
 
@@ -88,9 +88,10 @@ P1 的状态顺序必须明确：
 - 产品视口：小窗 **560×680**，包括标题栏；后台 **1280×820**。危险模态在小窗内，不能切换成全尺寸管理台。
 - 生成画布：正式使用 OpenAI `gpt-image-2`，高质量 **1536×1024 PNG**。小窗完整居中、保持 560:680 比例，等比放大或留白，禁止拉伸填满横画布。
 - 标题栏 40px；“记入 / 查询”切换区 40px；页脚操作区 56px；主体内边距 16px。信息超出时仅主体滚动，主操作与错误摘要仍可找到；不扩大视口、不无限缩字。
+- 外壳分三段：固定顶部（项目切换 + 输入）、中间唯一滚动主体、底部固定操作区；不得让整个输入面板与按钮共用一个滚动容器，也不得用 `margin-top: auto` 推按钮。结果卡操作使用稳定 grid：复制/打开两项同高同宽，窄窗口可整齐纵向，不用 `margin-right: auto` 混排。440×560 与 560×680 两个尺寸都要成立。
 - 只有“记入 / 查询”两个意图入口。结果仍属于查询；危险确认仍属于结果。设置用一个次要入口，不另造知识库、笔记、灵感、精选、统计或历史模块。
 - 保留 AP 字标、Action Pocket 名称和可拖动 header；使用透明无边框 Neutralino，不显示或仿制 Windows 最小化/最大化/关闭控件。仅保留可访问的窗口置顶操作。
-- 色板：深石板 `#1F2937`、可访问蓝主色 `#2563EB`、浅灰 `#EEF1F5`、内容色 `#F8FAFC`、正文 `#172033`、次正文 `#526071`、危险 `#C54B43`；外壳和内容层使用这些颜色的半透明值，结合 Windows 11 Mica / Windows 10 Acrylic 和适量 backdrop blur，不使用整块实色壳。浅蓝 `#60A5FA` 只作点缀。
+- 色板（Today AI 白玻璃参考，已核对官网真实 HTML/CSS）：header 不再使用深色条；主壳白色 ~70%、`backdrop-filter: blur(10–16px)`、圆角 24–28px、白色内高光与柔和大阴影；背景只保留非常轻的浅蓝 `#b7ddfb/#dfeafd` 到暖桃 `#ffe2c3` 的漫反射，不做显眼彩色块。输入、项目切换、结果卡同属玻璃层级（white/45~72 与低对比细边框），正文保持足够对比，危险态仍用红 `#C54B43`。主按钮用深色/近黑，避免整页蓝色。header 文字 black/65；深色只用于小面积主按钮。Windows 11 Mica / Windows 10 Acrylic 继续作为 OS 背景层，失败时回退不透明白色。
 - 字体：中文优先思源黑体或系统无衬线；正文 14px/22px，辅助 12px/18px，页标题 18px/26px；命令使用等宽字体。
 - 间距以 8px 为主；容器圆角 12px、控件 8px；控件高度 32–36px；线性图标 16–20px。少量阴影，不用大插画、标语卡和渐变装饰。
 - 普通文字对比度目标 ≥4.5:1，焦点/控件边界 ≥3:1；状态同时使用文字，不只依赖红绿颜色。实际值由结构稿/组件测量，不能凭 PNG 声称通过无障碍验收。
@@ -157,7 +158,7 @@ Use only the supplied fixture copy and supported facts. Keep input intact in fai
 ### 负面约束
 
 ```text
-No marketing slogan, hero illustration, oversized logo, mobile/device mockup, glassmorphism or neon.
+No marketing slogan, hero illustration, oversized logo, mobile/device mockup, neon, glossy 3D, saturated color blocks or a dark chrome header bar.
 No new navigation, chatbot, synthesized answer, derived advice panel, similarity chart, model picker,
 retrieval tuning, connector matrix, enterprise dashboard, observation session or keyboard monitoring.
 No invented source metadata, retention policy, local-only claim, compliance or training guarantee.
@@ -186,5 +187,7 @@ No mixed Windows/macOS shell, altered shortcuts, random wordmark, fake success o
 - [ ] 危险确认显示完整待复制内容和影响；取消有焦点；Tab 不等于复制；没有执行按钮。
 - [ ] 检索模式与权限/隐私文案有依据；未知如实显示；截图上传前能知道接收方与范围。
 - [ ] 按 560×680 逻辑尺寸查看结构稿，原文可读，按钮不裁切，滚动区域明确；不只看放大 PNG。
+- [ ] 主窗只出现紧凑项目切换、输入/结果与主要操作；项目增删改在托盘“设置…”独立窗口完成。
+- [ ] 外壳为清透白色毛玻璃，不是深色条或蓝灰实体面；header 不深色，主按钮近黑而非整页蓝色。
 - [ ] 文字对比度、键盘焦点循环与真实回执行为另做组件/交互验证，未验证项不宣称通过。
 - [ ] 最后评审颜色、图标、圆角与品牌感；交付记录包含未解决问题，而非仅写“通过”。

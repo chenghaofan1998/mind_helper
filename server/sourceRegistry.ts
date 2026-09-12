@@ -119,7 +119,9 @@ function parseProjectConfig(value: unknown): ProjectConfig {
     if (!sources.some((source) => source.id === defaultSourceId)) throw new KnowledgeSourceError("NOT_CONFIGURED", "默认知识源不属于项目。");
     return { id, name: stringField(item.name, "项目名称"), sources, defaultSourceId };
   });
-  const activeProjectId = raw.activeProjectId === undefined ? undefined : stringField(raw.activeProjectId, "当前项目 id");
+  // The native launcher serializes an absent active project as JSON null, so treat null like
+  // absent; a zero-project document must stay loadable instead of failing the whole service.
+  const activeProjectId = raw.activeProjectId == null ? undefined : stringField(raw.activeProjectId, "当前项目 id");
   if (activeProjectId && !ids.has(activeProjectId)) throw new KnowledgeSourceError("NOT_CONFIGURED", "当前项目不存在。");
   return { version: 1, projects, ...(activeProjectId ? { activeProjectId } : {}) };
 }

@@ -64,6 +64,16 @@ test("multi-project configuration rejects duplicate ids and relative paths", asy
   await assert.rejects(registryFromEnvironment({ AP_PROJECTS_JSON: JSON.stringify(duplicate) }), /项目 id/);
 });
 
+test("a zero-project projects.v1.json written by the launcher still loads", async () => {
+  const root = await mkdtemp(join(tmpdir(), "action-pocket-empty-projects-"));
+  const configPath = join(root, "projects.v1.json");
+  await writeFile(configPath, JSON.stringify({ version: 1, activeProjectId: null, projects: [] }));
+  const registry = await registryFromEnvironment({ AP_PROJECTS_FILE: configPath });
+  assert.deepEqual(registry.projectDescriptors(), []);
+  assert.equal(registry.activeProject(), undefined);
+  assert.throws(() => registry.requireForProject(undefined, undefined, "search"), /尚未配置项目/);
+});
+
 test("an added folder project and an added single-file project stay switchable and isolated", async () => {
   const folder = await mkdtemp(join(tmpdir(), "action-pocket-mixed-folder-"));
   await writeFile(join(folder, "folder-note.md"), "folder alpha marker\n");
