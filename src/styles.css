@@ -70,19 +70,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   background: transparent;
   color: var(--text);
   cursor: move;
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-app-region: drag;
 }
 .app-header button, .app-header select { cursor: pointer; }
 .app-header > strong { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 9px; background: rgba(20, 32, 54, .08); font-size: 12px; letter-spacing: .02em; }
 .product-name { margin-left: 8px; color: var(--muted); font-size: 12px; }
 .header-spacer { flex: 1 1 auto; }
-.app-header .project-switcher { min-width: 0; max-width: 250px; -webkit-app-region: no-drag; }
+.app-header .project-switcher { min-width: 0; max-width: 250px; }
 .app-header .project-switcher.single { min-width: 0; }
 .app-header .project-switcher label, .app-header .project-switcher-label { white-space: nowrap; }
 .app-header .project-chip { max-width: 150px; }
-.pin-button { display: grid; width: 32px; height: 32px; margin-left: 8px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); -webkit-app-region: no-drag; }
+.pin-button { display: grid; width: 32px; height: 32px; margin-left: 8px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
 .pin-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .pin-button:hover, .pin-button.active { background: rgba(20, 32, 54, .08); color: var(--text); }
 

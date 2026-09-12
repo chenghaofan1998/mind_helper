@@ -9,7 +9,7 @@ test("desktop shell renders a clear white glass surface in a transparent borderl
   const css = await source("src/styles.css");
   assert.match(css, /backdrop-filter: blur\(14px\) saturate\(140%\)/);
   assert.match(css, /background: transparent/);
-  assert.match(css, /-webkit-app-region: drag/);
+  assert.doesNotMatch(css, /-webkit-app-region:/);
   assert.match(css, /border-radius: 26px/);
   assert.match(css, /--glass: rgba\(255, 255, 255, \.84\)/);
   assert.match(css, /@supports not \(backdrop-filter/);
@@ -39,15 +39,26 @@ test("main window keeps a fixed top input row, one scrolling body and a fixed ac
   assert.match(main, /<div class="panel-actions">/);
 });
 
-test("desktop chrome uses native drag without allowing labels to be dragged into query input (source contract)", async () => {
+test("desktop chrome manually moves the native window without allowing labels into query input (source contract)", async () => {
   const main = await source("src/main.tsx");
   const bridge = await source("src/desktopRuntime.ts");
+  const drag = await source("src/windowDrag.ts");
   const css = await source("src/styles.css");
-  assert.match(bridge, /neutralinoWindow\.beginDrag\(screenX, screenY\)/);
+  assert.match(bridge, /neutralinoWindow\.getPosition\(\)/);
+  assert.match(bridge, /neutralinoWindow\.move\(Math\.round\(x\), Math\.round\(y\)\)/);
+  assert.doesNotMatch(bridge, /neutralinoWindow\.beginDrag/);
+  assert.match(drag, /class ManualWindowDrag/);
+  assert.match(drag, /private moveInFlight = false/);
+  assert.match(drag, /windowPositionFromDrag\(gesture\.startWindow, gesture\.startScreen, gesture\.latestScreen, gesture\.scale\)/);
+  assert.match(main, /new ManualWindowDrag\([\s\S]*?\(\) => window\.devicePixelRatio \|\| 1/);
   assert.match(main, /shouldBeginWindowDrag\(event\.button, inHeader, inInteractiveControl\)/);
+  assert.match(main, /document\.addEventListener\("pointermove"/);
+  assert.match(main, /document\.addEventListener\("pointerup"/);
+  assert.match(main, /document\.addEventListener\("pointercancel"/);
+  assert.match(main, /window\.addEventListener\("blur"/);
   assert.match(main, /target\.closest\("\.app-header, \.mode-tabs, \.query-form > label"\)/);
   assert.match(main, /autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/);
-  assert.match(css, /\.app-header \{[\s\S]*?user-select: none/);
+  assert.match(css, /\.app-header \{[\s\S]*?touch-action: none;[\s\S]*?user-select: none/);
   assert.match(css, /\.mode-tabs \{[\s\S]*?user-select: none/);
 });
 

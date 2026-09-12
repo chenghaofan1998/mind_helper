@@ -1,6 +1,6 @@
 import "./styles.css";
 import { copyText } from "./clipboard";
-import { beginDesktopDrag, hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, toggleDesktopPin } from "./desktopRuntime";
+import { desktopWindowPosition, hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, moveDesktopWindow, toggleDesktopPin } from "./desktopRuntime";
 import { loadDraft, loadProjectDraft, saveDraft } from "./draftStore";
 import { focusRiskReturnTarget, focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import type { RiskReturnKind, RiskReturnTarget } from "./focusTrap";
@@ -11,7 +11,7 @@ import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, Search
 import { nextResultIndex, resultKeyboardAction } from "./resultNavigation";
 import { commandForClipboard, isDangerous, riskImpact } from "./search";
 import { canSubmitWrite, effectiveWritePath } from "./writeTarget";
-import { shouldBeginWindowDrag } from "./windowDrag";
+import { ManualWindowDrag, shouldBeginWindowDrag } from "./windowDrag";
 
 type Mode = "record" | "query";
 type RuntimeWindow = Window & {
@@ -49,6 +49,13 @@ let clipboardError = "";
 let editingTarget = false;
 let windowPinned = false;
 let toastTimer = 0;
+
+const manualWindowDrag = new ManualWindowDrag(
+  desktopWindowPosition,
+  moveDesktopWindow,
+  (error) => showToast(`窗口移动失败：${error instanceof Error ? error.message : String(error)}`),
+  () => window.devicePixelRatio || 1,
+);
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
@@ -419,11 +426,28 @@ root.addEventListener("pointerdown", (event) => {
   const inHeader = Boolean(target.closest(".app-header"));
   const inInteractiveControl = Boolean(target.closest("button, select, input, textarea, a"));
   if (!shouldBeginWindowDrag(event.button, inHeader, inInteractiveControl)) return;
-  // Use Neutralino's native drag boundary instead of relying on Chromium-only app-region CSS.
-  // Preventing the browser gesture first also stops shell labels being selected and dropped into the query box.
+  // Neutralino beginDrag can resolve without moving on Windows. Track the pointer ourselves and
+  // issue coalesced window.move calls instead; preventing the browser gesture also stops labels
+  // from being selected and dropped into the query box.
   event.preventDefault();
-  void beginDesktopDrag(event.screenX, event.screenY).catch((error) => showToast(`窗口移动失败：${String(error)}`));
+  try { root.setPointerCapture(event.pointerId); } catch { /* document-level listeners remain a fallback */ }
+  void manualWindowDrag.start(event.pointerId, { x: event.screenX, y: event.screenY });
 });
+
+document.addEventListener("pointermove", (event) => {
+  manualWindowDrag.update(event.pointerId, { x: event.screenX, y: event.screenY });
+});
+
+function finishWindowDrag(event: PointerEvent): void {
+  manualWindowDrag.end(event.pointerId);
+  try {
+    if (root.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
+  } catch { /* the browser may already have released capture */ }
+}
+
+document.addEventListener("pointerup", finishWindowDrag);
+document.addEventListener("pointercancel", finishWindowDrag);
+window.addEventListener("blur", () => manualWindowDrag.end());
 
 root.addEventListener("dragstart", (event) => {
   const target = event.target as HTMLElement;

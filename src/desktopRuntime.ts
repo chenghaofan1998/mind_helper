@@ -26,9 +26,16 @@ export async function toggleDesktopPin(): Promise<boolean> {
   return pinned;
 }
 
-export async function beginDesktopDrag(screenX: number, screenY: number): Promise<void> {
-  if (state !== "ready") return;
-  await neutralinoWindow.beginDrag(screenX, screenY);
+export async function desktopWindowPosition(): Promise<{ x: number; y: number }> {
+  if (state !== "ready") throw new Error("桌面窗口尚未就绪。");
+  const position = await neutralinoWindow.getPosition();
+  if (typeof position.x !== "number" || typeof position.y !== "number") throw new Error("无法读取桌面窗口位置。");
+  return { x: position.x, y: position.y };
+}
+
+export async function moveDesktopWindow(x: number, y: number): Promise<void> {
+  if (state !== "ready") throw new Error("桌面窗口尚未就绪。");
+  await neutralinoWindow.move(Math.round(x), Math.round(y));
 }
 
 export async function showDesktopWindow(): Promise<void> {
