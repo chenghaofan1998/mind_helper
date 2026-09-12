@@ -21,7 +21,8 @@
     "clipboard.*",
     "events.*",
     "storage.*",
-    "os.*"
+    "os.*",
+    "computer.*"
   ],
   "modes": {
     "window": {

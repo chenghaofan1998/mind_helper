@@ -4,115 +4,100 @@ export interface DragPoint {
 }
 
 interface DragGesture {
-  generation: number;
-  pointerId: number;
-  startScreen: DragPoint;
-  latestScreen: DragPoint;
-  scale: number;
   startWindow?: DragPoint;
-}
-
-interface PendingMove {
-  generation: number;
-  position: DragPoint;
+  startMouse?: DragPoint;
+  lastMoved?: DragPoint;
+  tickerStop?: () => void;
 }
 
 export type WindowPositionReader = () => Promise<DragPoint>;
+export type MousePositionReader = () => Promise<DragPoint>;
 export type WindowMover = (x: number, y: number) => Promise<void>;
+export type DragTicker = (onTick: () => void) => () => void;
 
 export function shouldBeginWindowDrag(button: number, inHeader: boolean, inInteractiveControl: boolean): boolean {
   return button === 0 && inHeader && !inInteractiveControl;
 }
 
-// Pointer events report logical (DPI-independent) screen pixels, while Neutralino's getPosition and
-// move use physical window pixels. On a scaled display the raw delta would move the window slower
-// than the cursor, so the pointer delta is converted with the device pixel ratio.
-export function windowPositionFromDrag(startWindow: DragPoint, startScreen: DragPoint, currentScreen: DragPoint, scale = 1): DragPoint {
-  const factor = Number.isFinite(scale) && scale > 0 ? scale : 1;
+export function windowPositionFromDrag(startWindow: DragPoint, startMouse: DragPoint, currentMouse: DragPoint): DragPoint {
   return {
-    x: startWindow.x + (currentScreen.x - startScreen.x) * factor,
-    y: startWindow.y + (currentScreen.y - startScreen.y) * factor,
+    x: Math.round(startWindow.x + currentMouse.x - startMouse.x),
+    y: Math.round(startWindow.y + currentMouse.y - startMouse.y),
   };
 }
 
+function defaultTicker(onTick: () => void): () => void {
+  const timer = window.setInterval(onTick, 16);
+  return () => window.clearInterval(timer);
+}
+
 /**
- * Moves a borderless window without relying on Neutralino beginDrag, which can resolve without
- * moving on some Windows/WebView runtime combinations. Move requests are coalesced so at most one
- * native request is in flight and only the latest pointer position is retained.
+ * Moves the borderless window by following the native cursor.
+ *
+ * Neutralino's beginDrag does not exist in the bundled 5.6.0 runtime and -webkit-app-region is not
+ * honoured by WebView2, so the pointer drives the window directly. Both the cursor position and the
+ * window position come from the same Win32 physical coordinate system, which keeps the window under
+ * the cursor at every display scale without guessing a DPI factor. Pointer events only start and end
+ * the gesture; a ticker polls the cursor so a missed pointermove cannot freeze the window.
  */
 export class ManualWindowDrag {
   private gesture: DragGesture | undefined;
-  private generation = 0;
-  private pendingMove: PendingMove | undefined;
   private moveInFlight = false;
 
   constructor(
-    private readonly readPosition: WindowPositionReader,
+    private readonly readWindowPosition: WindowPositionReader,
+    private readonly readMousePosition: MousePositionReader,
     private readonly moveWindow: WindowMover,
     private readonly reportError: (error: unknown) => void,
-    private readonly readScale: () => number = () => 1,
+    private readonly ticker: DragTicker = defaultTicker,
   ) {}
 
-  async start(pointerId: number, screen: DragPoint): Promise<void> {
-    const generation = ++this.generation;
-    this.pendingMove = undefined;
-    this.gesture = { generation, pointerId, startScreen: screen, latestScreen: screen, scale: this.readScale() };
+  get dragging(): boolean {
+    return this.gesture !== undefined;
+  }
+
+  async start(): Promise<void> {
+    if (this.gesture) return;
+    const gesture: DragGesture = {};
+    this.gesture = gesture;
     try {
-      const startWindow = await this.readPosition();
-      const gesture = this.gesture;
-      if (!gesture || gesture.generation !== generation) return;
+      const [startWindow, startMouse] = await Promise.all([this.readWindowPosition(), this.readMousePosition()]);
+      if (this.gesture !== gesture) return;
       gesture.startWindow = startWindow;
-      this.queueCurrentPosition(gesture);
+      gesture.startMouse = startMouse;
+      gesture.tickerStop = this.ticker(() => void this.tick(gesture));
     } catch (error) {
-      if (this.gesture?.generation !== generation) return;
-      this.end(pointerId);
+      if (this.gesture !== gesture) return;
+      this.end();
       this.reportError(error);
     }
   }
 
-  update(pointerId: number, screen: DragPoint): void {
+  end(): void {
     const gesture = this.gesture;
-    if (!gesture || gesture.pointerId !== pointerId) return;
-    gesture.latestScreen = screen;
-    if (gesture.startWindow) this.queueCurrentPosition(gesture);
-  }
-
-  end(pointerId?: number): void {
-    if (pointerId !== undefined && this.gesture?.pointerId !== pointerId) return;
-    this.generation++;
     this.gesture = undefined;
-    this.pendingMove = undefined;
+    gesture?.tickerStop?.();
   }
 
-  private queueCurrentPosition(gesture: DragGesture): void {
-    if (!gesture.startWindow) return;
-    this.pendingMove = {
-      generation: gesture.generation,
-      position: windowPositionFromDrag(gesture.startWindow, gesture.startScreen, gesture.latestScreen, gesture.scale),
-    };
-    void this.drainMoves();
-  }
-
-  private async drainMoves(): Promise<void> {
-    if (this.moveInFlight) return;
+  private async tick(gesture: DragGesture): Promise<void> {
+    if (this.gesture !== gesture || !gesture.startWindow || !gesture.startMouse || this.moveInFlight) return;
     this.moveInFlight = true;
     try {
-      while (this.pendingMove) {
-        const move = this.pendingMove;
-        this.pendingMove = undefined;
-        try {
-          await this.moveWindow(move.position.x, move.position.y);
-        } catch (error) {
-          if (this.gesture?.generation === move.generation) {
-            this.end(this.gesture.pointerId);
-            this.reportError(error);
-          }
-        }
-      }
+      const mouse = await this.readMousePosition();
+      if (this.gesture !== gesture) return;
+      const startWindow = gesture.startWindow;
+      const startMouse = gesture.startMouse;
+      const next = windowPositionFromDrag(startWindow, startMouse, mouse);
+      // The ticker runs at a fixed rate, so an idle cursor must not spam the native window API.
+      if (gesture.lastMoved && gesture.lastMoved.x === next.x && gesture.lastMoved.y === next.y) return;
+      await this.moveWindow(next.x, next.y);
+      if (this.gesture === gesture) gesture.lastMoved = next;
+    } catch (error) {
+      if (this.gesture !== gesture) return;
+      this.end();
+      this.reportError(error);
     } finally {
       this.moveInFlight = false;
-      // A pointer update can arrive between the loop check and clearing the in-flight flag.
-      if (this.pendingMove) void this.drainMoves();
     }
   }
 }

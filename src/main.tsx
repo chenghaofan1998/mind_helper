@@ -1,6 +1,6 @@
 import "./styles.css";
 import { copyText } from "./clipboard";
-import { desktopWindowPosition, hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, moveDesktopWindow, toggleDesktopPin } from "./desktopRuntime";
+import { desktopMousePosition, desktopWindowPosition, hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, moveDesktopWindow, toggleDesktopPin } from "./desktopRuntime";
 import { loadDraft, loadProjectDraft, saveDraft } from "./draftStore";
 import { focusRiskReturnTarget, focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import type { RiskReturnKind, RiskReturnTarget } from "./focusTrap";
@@ -52,9 +52,9 @@ let toastTimer = 0;
 
 const manualWindowDrag = new ManualWindowDrag(
   desktopWindowPosition,
+  desktopMousePosition,
   moveDesktopWindow,
   (error) => showToast(`窗口移动失败：${error instanceof Error ? error.message : String(error)}`),
-  () => window.devicePixelRatio || 1,
 );
 
 function escapeHtml(value: string): string {
@@ -420,33 +420,26 @@ function syncSubmitButtons(): void {
   if (queryButton) queryButton.disabled = loading || busy || !query.trim() || !activeSource()?.capabilities.includes("search");
 }
 
-root.addEventListener("pointerdown", (event) => {
+root.addEventListener("pointerdown", beginWindowDragFromPointer);
+// Some WebView2 builds deliver only mouse events for a borderless window; starting from both keeps
+// dragging reliable because ManualWindowDrag ignores a second start during an active gesture.
+root.addEventListener("mousedown", beginWindowDragFromPointer);
+
+function beginWindowDragFromPointer(event: MouseEvent): void {
   if (!isDesktopRuntime()) return;
   const target = event.target as HTMLElement;
   const inHeader = Boolean(target.closest(".app-header"));
   const inInteractiveControl = Boolean(target.closest("button, select, input, textarea, a"));
   if (!shouldBeginWindowDrag(event.button, inHeader, inInteractiveControl)) return;
-  // Neutralino beginDrag can resolve without moving on Windows. Track the pointer ourselves and
-  // issue coalesced window.move calls instead; preventing the browser gesture also stops labels
-  // from being selected and dropped into the query box.
+  // Preventing the browser gesture also stops shell labels being selected and dropped into the query box.
   event.preventDefault();
-  try { root.setPointerCapture(event.pointerId); } catch { /* document-level listeners remain a fallback */ }
-  void manualWindowDrag.start(event.pointerId, { x: event.screenX, y: event.screenY });
-});
-
-document.addEventListener("pointermove", (event) => {
-  manualWindowDrag.update(event.pointerId, { x: event.screenX, y: event.screenY });
-});
-
-function finishWindowDrag(event: PointerEvent): void {
-  manualWindowDrag.end(event.pointerId);
-  try {
-    if (root.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
-  } catch { /* the browser may already have released capture */ }
+  void manualWindowDrag.start();
 }
 
-document.addEventListener("pointerup", finishWindowDrag);
-document.addEventListener("pointercancel", finishWindowDrag);
+root.addEventListener("pointerup", () => manualWindowDrag.end());
+root.addEventListener("mouseup", () => manualWindowDrag.end());
+document.addEventListener("pointercancel", () => manualWindowDrag.end());
+// A drag that leaves the window never delivers pointerup here, so losing focus must end it too.
 window.addEventListener("blur", () => manualWindowDrag.end());
 
 root.addEventListener("dragstart", (event) => {

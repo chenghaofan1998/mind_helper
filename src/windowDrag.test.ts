@@ -4,6 +4,22 @@ import { ManualWindowDrag, shouldBeginWindowDrag, windowPositionFromDrag } from 
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+/** Collects the tick callbacks a running gesture registered so a test can drive them by hand. */
+function tickerHarness() {
+  const callbacks: Array<() => void> = [];
+  let stops = 0;
+  const ticker = (onTick: () => void) => {
+    callbacks.push(onTick);
+    return () => { stops++; callbacks.splice(callbacks.indexOf(onTick), 1); };
+  };
+  return {
+    ticker,
+    get stops() { return stops; },
+    get active() { return callbacks.length; },
+    async pump() { for (const callback of [...callbacks]) callback(); await tick(); },
+  };
+}
+
 test("only a primary-button gesture on non-interactive header chrome starts window drag", () => {
   assert.equal(shouldBeginWindowDrag(0, true, false), true);
   assert.equal(shouldBeginWindowDrag(0, true, true), false);
@@ -11,116 +27,179 @@ test("only a primary-button gesture on non-interactive header chrome starts wind
   assert.equal(shouldBeginWindowDrag(2, true, false), false);
 });
 
-test("manual drag applies the screen delta to the starting window position", () => {
+test("the window follows the cursor using the same native coordinate space", () => {
   assert.deepEqual(
     windowPositionFromDrag({ x: 120, y: 80 }, { x: 300, y: 200 }, { x: 347, y: 176 }),
     { x: 167, y: 56 },
   );
 });
 
-// Neutralino reports physical window pixels while pointer events report logical pixels, so a
-// scaled display needs the device pixel ratio applied to the pointer delta.
-test("manual drag converts logical pointer deltas to physical window pixels", () => {
-  assert.deepEqual(
-    windowPositionFromDrag({ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 140, y: 60 }, 1.5),
-    { x: 60, y: -60 },
+test("a gesture follows the native cursor without any pointer or DPI input", async () => {
+  const harness = tickerHarness();
+  const moves: Array<[number, number]> = [];
+  let mouse = { x: 500, y: 400 };
+  const drag = new ManualWindowDrag(
+    async () => ({ x: 100, y: 200 }),
+    async () => mouse,
+    async (x, y) => { moves.push([x, y]); },
+    (error) => assert.fail(String(error)),
+    harness.ticker,
   );
-  assert.deepEqual(
-    windowPositionFromDrag({ x: 10, y: 20 }, { x: 0, y: 0 }, { x: 10, y: 10 }, 0),
-    { x: 20, y: 30 },
-  );
+
+  await drag.start();
+  assert.equal(drag.dragging, true);
+  assert.equal(harness.active, 1);
+  await harness.pump();
+  assert.deepEqual(moves, [[100, 200]]);
+
+  mouse = { x: 520, y: 370 };
+  await harness.pump();
+  assert.deepEqual(moves, [[100, 200], [120, 170]]);
+
+  drag.end();
+  assert.equal(drag.dragging, false);
+  assert.equal(harness.stops, 1);
+  mouse = { x: 900, y: 900 };
+  await harness.pump();
+  assert.equal(moves.length, 2);
 });
 
-test("a gesture captures the pixel ratio once so later scale changes cannot skew an active drag", async () => {
-  let scale = 2;
+test("a second start during an active gesture is ignored", async () => {
+  const harness = tickerHarness();
+  let windowReads = 0;
+  const drag = new ManualWindowDrag(
+    async () => { windowReads++; return { x: 10, y: 10 }; },
+    async () => ({ x: 10, y: 10 }),
+    async () => { /* moved */ },
+    (error) => assert.fail(String(error)),
+    harness.ticker,
+  );
+
+  await drag.start();
+  await drag.start();
+  assert.equal(windowReads, 1);
+  assert.equal(harness.active, 1);
+  drag.end();
+});
+
+test("ending before the native positions resolve prevents a late move", async () => {
+  const harness = tickerHarness();
+  let resolveWindow!: (position: { x: number; y: number }) => void;
+  const windowPosition = new Promise<{ x: number; y: number }>((resolve) => { resolveWindow = resolve; });
   const moves: Array<[number, number]> = [];
   const drag = new ManualWindowDrag(
+    () => windowPosition,
     async () => ({ x: 0, y: 0 }),
     async (x, y) => { moves.push([x, y]); },
     (error) => assert.fail(String(error)),
-    () => scale,
+    harness.ticker,
   );
 
-  await drag.start(5, { x: 0, y: 0 });
-  scale = 1;
-  drag.update(5, { x: 10, y: 10 });
-  await tick();
-  assert.deepEqual(moves, [[0, 0], [20, 20]]);
-});
-
-test("manual drag keeps only the latest point while one native move is in flight", async () => {
-  let releaseFirst!: () => void;
-  const firstMove = new Promise<void>((resolve) => { releaseFirst = resolve; });
-  const moves: Array<[number, number]> = [];
-  const drag = new ManualWindowDrag(
-    async () => ({ x: 100, y: 200 }),
-    async (x, y) => {
-      moves.push([x, y]);
-      if (moves.length === 1) await firstMove;
-    },
-    (error) => assert.fail(String(error)),
-  );
-
-  await drag.start(7, { x: 20, y: 30 });
-  drag.update(7, { x: 21, y: 31 });
-  drag.update(7, { x: 30, y: 50 });
-  drag.update(7, { x: 44, y: 61 });
-  assert.deepEqual(moves, [[100, 200]]);
-
-  releaseFirst();
-  await tick();
-  assert.deepEqual(moves, [[100, 200], [124, 231]]);
-});
-
-test("ending a gesture discards pending coordinates and ignores later pointer updates", async () => {
-  const moves: Array<[number, number]> = [];
-  const drag = new ManualWindowDrag(
-    async () => ({ x: 5, y: 10 }),
-    async (x, y) => { moves.push([x, y]); },
-    (error) => assert.fail(String(error)),
-  );
-
-  await drag.start(3, { x: 50, y: 60 });
-  await tick();
-  drag.end(3);
-  const countAtEnd = moves.length;
-  drag.update(3, { x: 500, y: 600 });
-  await tick();
-  assert.equal(moves.length, countAtEnd);
-});
-
-test("ending before getPosition resolves prevents a late native move", async () => {
-  let resolvePosition!: (position: { x: number; y: number }) => void;
-  const position = new Promise<{ x: number; y: number }>((resolve) => { resolvePosition = resolve; });
-  const moves: Array<[number, number]> = [];
-  const drag = new ManualWindowDrag(
-    () => position,
-    async (x, y) => { moves.push([x, y]); },
-    (error) => assert.fail(String(error)),
-  );
-
-  const starting = drag.start(9, { x: 10, y: 20 });
-  drag.end(9);
-  resolvePosition({ x: 40, y: 50 });
+  const starting = drag.start();
+  drag.end();
+  resolveWindow({ x: 40, y: 50 });
   await starting;
-  await tick();
+  await harness.pump();
   assert.deepEqual(moves, []);
+  assert.equal(harness.active, 0);
 });
 
-test("a native move failure reports once and clears the active gesture", async () => {
+test("a failed cursor read during a drag reports once and ends the gesture", async () => {
+  const harness = tickerHarness();
   const errors: unknown[] = [];
-  let moveAttempts = 0;
+  let reads = 0;
   const drag = new ManualWindowDrag(
     async () => ({ x: 1, y: 2 }),
-    async () => { moveAttempts++; throw new Error("injected move failure"); },
+    async () => {
+      reads++;
+      if (reads > 1) throw new Error("injected cursor failure");
+      return { x: 5, y: 5 };
+    },
+    async () => { assert.fail("a failed cursor read must not move the window"); },
     (error) => errors.push(error),
+    harness.ticker,
   );
 
-  await drag.start(11, { x: 10, y: 20 });
-  await tick();
-  drag.update(11, { x: 30, y: 40 });
-  await tick();
-  assert.equal(moveAttempts, 1);
+  await drag.start();
+  assert.equal(drag.dragging, true);
+  await harness.pump();
+  assert.equal(errors.length, 1);
+  assert.match(String(errors[0]), /injected cursor failure/);
+  assert.equal(drag.dragging, false);
+  assert.equal(harness.stops, 1);
+});
+
+test("a failed start position read reports and never starts the drag ticker", async () => {
+  const harness = tickerHarness();
+  const errors: unknown[] = [];
+  const drag = new ManualWindowDrag(
+    async () => { throw new Error("injected position failure"); },
+    async () => ({ x: 5, y: 5 }),
+    async () => { assert.fail("a failed start read must not move the window"); },
+    (error) => errors.push(error),
+    harness.ticker,
+  );
+
+  await drag.start();
+  assert.equal(errors.length, 1);
+  assert.match(String(errors[0]), /injected position failure/);
+  assert.equal(drag.dragging, false);
+  assert.equal(harness.active, 0);
+  assert.equal(harness.stops, 0);
+});
+
+test("a failed native move reports once instead of silently freezing the window", async () => {
+  const harness = tickerHarness();
+  const errors: unknown[] = [];
+  const drag = new ManualWindowDrag(
+    async () => ({ x: 0, y: 0 }),
+    async () => ({ x: 5, y: 5 }),
+    async () => { throw new Error("injected move failure"); },
+    (error) => errors.push(error),
+    harness.ticker,
+  );
+
+  await drag.start();
+  await harness.pump();
   assert.equal(errors.length, 1);
   assert.match(String(errors[0]), /injected move failure/);
+  assert.equal(drag.dragging, false);
+});
+
+test("a stationary cursor does not repeat native moves while the ticker keeps running", async () => {
+  const harness = tickerHarness();
+  let moveCalls = 0;
+  const drag = new ManualWindowDrag(
+    async () => ({ x: 10, y: 20 }),
+    async () => ({ x: 55, y: 66 }),
+    async () => { moveCalls++; },
+    (error) => assert.fail(String(error)),
+    harness.ticker,
+  );
+
+  await drag.start();
+  for (let attempt = 0; attempt < 4; attempt++) await harness.pump();
+  assert.equal(moveCalls, 1);
+  drag.end();
+});
+
+test("a fast cursor cannot queue native moves faster than they complete", async () => {
+  const harness = tickerHarness();
+  let releaseMove!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseMove = resolve; });
+  let moveCalls = 0;
+  const drag = new ManualWindowDrag(
+    async () => ({ x: 0, y: 0 }),
+    async () => ({ x: 25, y: 25 }),
+    async () => { moveCalls++; await gate; },
+    (error) => assert.fail(String(error)),
+    harness.ticker,
+  );
+
+  await drag.start();
+  for (let attempt = 0; attempt < 5; attempt++) await harness.pump();
+  assert.equal(moveCalls, 1);
+  releaseMove();
+  await tick();
+  drag.end();
 });

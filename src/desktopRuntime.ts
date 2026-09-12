@@ -1,4 +1,4 @@
-import { events, init, window as neutralinoWindow } from "@neutralinojs/lib";
+import { computer, events, init, window as neutralinoWindow } from "@neutralinojs/lib";
 import { attemptDesktopHide } from "./desktopRuntimeState";
 
 interface DesktopCallbacks {
@@ -27,9 +27,17 @@ export async function toggleDesktopPin(): Promise<boolean> {
 }
 
 export async function desktopWindowPosition(): Promise<{ x: number; y: number }> {
-  if (state !== "ready") throw new Error("桌面窗口尚未就绪。");
+  if (state !== "ready") throw new Error("桌面窗口尚未就绪，请稍后重试。");
   const position = await neutralinoWindow.getPosition();
   if (typeof position.x !== "number" || typeof position.y !== "number") throw new Error("无法读取桌面窗口位置。");
+  return { x: position.x, y: position.y };
+}
+
+// Cursor and window coordinates both come from Win32, so dragging needs no DPI conversion.
+export async function desktopMousePosition(): Promise<{ x: number; y: number }> {
+  if (state !== "ready") throw new Error("桌面窗口尚未就绪，请稍后重试。");
+  const position = await computer.getMousePosition();
+  if (typeof position.x !== "number" || typeof position.y !== "number") throw new Error("无法读取鼠标位置。");
   return { x: position.x, y: position.y };
 }
 
