@@ -54,8 +54,6 @@ test("Windows launcher caches the shell HWND and recovers hidden, minimized and 
   assert.match(launcher, /SetForegroundWindow\(handle\)/);
   assert.match(launcher, /new HotkeyWindow\(ToggleShell\)/);
   assert.match(launcher, /DoubleClick \+= delegate \{ RequestShowShell\(\); \}/);
-  assert.match(launcher, /DwmSetWindowAttribute/);
-  assert.match(launcher, /AccentEnableAcrylicBlurBehind/);
   assert.match(launcher, /Func<string, int, Process> shellStarter/);
   assert.match(launcher, /MaximumAutomaticShellFailures = 3/);
   assert.match(launcher, /shellRestartPolicy\.RegisterFailure\(\)/);
@@ -122,16 +120,13 @@ test("Windows launcher sources are split by responsibility and stay under 500 li
   assert.match(build, /\$sources/);
 });
 
-test("Windows backdrop has an opaque fallback for rejected or unavailable Acrylic (source contract)", async () => {
+test("Windows launcher leaves the outer HWND transparent for the rounded CSS glass shell (source contract)", async () => {
   const launcher = await nativeSource();
-  assert.match(launcher, /public static bool Apply\(IntPtr window\)/);
-  assert.match(launcher, /applyAcrylic\(\) != 0 \? BackdropMode\.Acrylic : BackdropMode\.Opaque/);
-  assert.match(launcher, /catch \(EntryPointNotFoundException\) \{ return BackdropMode\.Opaque; \}/);
-  assert.match(launcher, /ApplyOpaqueFallback\(window\)/);
-  assert.match(launcher, /AccentEnableGradient/);
-  assert.match(launcher, /SetLayeredWindowAttributes\(window, 0, 255, LwaAlpha\)/);
-  assert.match(launcher, /MarkBackdropFailure\(\)/);
-  assert.match(launcher, /acrylicFailure == BackdropMode\.Opaque && missingApi == BackdropMode\.Opaque/);
+  const files = await nativeSourceFiles();
+  assert.ok(!files.includes("DesktopBackdrop.cs"));
+  assert.doesNotMatch(launcher, /DwmSetWindowAttribute|SetWindowCompositionAttribute|AccentEnableAcrylicBlurBehind|ApplyOpaqueFallback|MarkBackdropFailure/);
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.transparent, true);
 });
 
 test("Windows package uses an isolated staging tree with one root executable", async () => {

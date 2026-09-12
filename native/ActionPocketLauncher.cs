@@ -8,7 +8,7 @@ namespace ActionPocketLauncher
     /// Entry point for the Windows desktop launcher. It enforces a single running instance and hands
     /// control to <see cref="LauncherContext"/>. See the sibling files for project configuration and
     /// the settings window (GraphConfiguration/SettingsWindow), the shell lifecycle (LauncherContext),
-    /// the OS backdrop (DesktopBackdrop), shell support types (ShellSupport) and the self-test.
+    /// shell support types (ShellSupport) and the self-test.
     /// </summary>
     internal static class Program
     {

@@ -11,7 +11,7 @@ test("modal focus wraps at both ends and enters from outside", () => {
   assert.equal(wrappedFocusIndex(0, 2, false), undefined);
 });
 
-test("danger confirmation identifies Escape and Tab and focuses initial/return targets", () => {
+test("danger-confirmation keyboard and focus helpers expose the expected contract", () => {
   let initialFocuses = 0;
   let returnFocuses = 0;
   assert.equal(focusTarget({ focus: () => { initialFocuses += 1; } }), true);
@@ -24,7 +24,7 @@ test("danger confirmation identifies Escape and Tab and focuses initial/return t
   assert.equal(modalKeyboardAction("Enter"), undefined);
 });
 
-test("result-card Enter then modal Escape restores the result card", () => {
+test("result-card return-target helper selects the card (helper contract)", () => {
   let cardFocuses = 0;
   let buttonFocuses = 0;
   const targets = [
@@ -38,7 +38,7 @@ test("result-card Enter then modal Escape restores the result card", () => {
   assert.equal(buttonFocuses, 0);
 });
 
-test("copy-button click then modal Escape restores the copy button", () => {
+test("copy-button return-target helper selects the button (helper contract)", () => {
   let cardFocuses = 0;
   let buttonFocuses = 0;
   const targets = [

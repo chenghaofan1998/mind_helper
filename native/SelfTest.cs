@@ -7,8 +7,8 @@ namespace ActionPocketLauncher
 {
     /// <summary>
     /// UI-free self-test used by the build script and by "<c>--self-test</c>". It covers the pure
-    /// pieces (project serialization and dedup, project document rules, restart policy and backdrop
-    /// resolution) so a broken launcher fails the build instead of only failing on a real desktop.
+    /// pieces (project serialization and dedup, project document rules and restart policy) so a
+    /// broken launcher fails the build instead of only failing on a real desktop.
     /// </summary>
     internal static class SelfTest
     {
@@ -37,9 +37,6 @@ namespace ActionPocketLauncher
                     try { failingStarter("test", port); }
                     catch (InvalidOperationException) { willRetry = restartPolicy.RegisterFailure(); }
                 }
-
-                BackdropMode acrylicFailure = SystemBackdrop.Resolve(delegate { return -1; }, delegate { return 0; });
-                BackdropMode missingApi = SystemBackdrop.Resolve(delegate { return -1; }, delegate { throw new EntryPointNotFoundException(); });
 
                 string temporaryRoot = Path.Combine(Path.GetTempPath(), "action-pocket-self-test-" + Guid.NewGuid().ToString("N"));
                 string legacyGraph = Path.Combine(temporaryRoot, "legacy");
@@ -74,7 +71,7 @@ namespace ActionPocketLauncher
                 catch (InvalidOperationException) { rejectedEmptyName = true; }
 
                 return port > 0 && port <= 65535 && restored != null && restored.projects.Count == 1
-                    && starts == 3 && !willRetry && acrylicFailure == BackdropMode.Opaque && missingApi == BackdropMode.Opaque
+                    && starts == 3 && !willRetry
                     && importedLegacy && importedAdded && deduplicated && imported.projects.Count == 2
                     && normalizedActive && normalizedEmpty && rejectedEmptyName ? 0 : 1;
             }

@@ -7,8 +7,8 @@ using System.Windows.Forms;
 namespace ActionPocketLauncher
 {
     /// <summary>
-    /// Owns the tray lifecycle: it starts the local knowledge service and the Neutralino shell,
-    /// keeps them alive, exposes the tray menu and the global hotkey, and applies the OS backdrop.
+    /// Owns the tray lifecycle: it starts and monitors the local knowledge service and Neutralino
+    /// shell, exposes the tray menu and global hotkey, and coordinates show/hide/exit behavior.
     /// Project configuration is edited in a separate settings window and persisted atomically by
     /// <see cref="GraphConfiguration"/>.
     /// </summary>
@@ -31,7 +31,6 @@ namespace ActionPocketLauncher
         private readonly System.Windows.Forms.Timer monitor;
         private Process shell;
         private IntPtr shellHandle;
-        private bool backdropFailed;
         private bool showRequested;
         private int stableShowTicks;
         private bool stopping;
@@ -315,13 +314,6 @@ namespace ActionPocketLauncher
             shell = shellStarter(root, port);
         }
 
-        private void MarkBackdropFailure()
-        {
-            if (backdropFailed) return;
-            backdropFailed = true;
-            if (tray != null) tray.Text = "Action Pocket（双击显示 · 不透明背景）";
-        }
-
         private IntPtr FindShellWindow()
         {
             if (shell == null || HasExited(shell)) return IntPtr.Zero;
@@ -331,7 +323,6 @@ namespace ActionPocketLauncher
                 shell.Refresh();
                 shellHandle = shell.MainWindowHandle;
                 if (shellHandle == IntPtr.Zero) shellHandle = FindWindowForProcess((uint)shell.Id);
-                if (shellHandle != IntPtr.Zero && !SystemBackdrop.Apply(shellHandle)) MarkBackdropFailure();
                 return shellHandle;
             }
             catch (InvalidOperationException) { return IntPtr.Zero; }

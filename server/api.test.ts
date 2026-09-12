@@ -1,15 +1,48 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { KnowledgeErrorCode, KnowledgeSearchResults, KnowledgeSource } from "../src/knowledge/types.js";
-import { createApiMiddleware } from "./api.js";
+import { createApiMiddleware, revealLocalFile } from "./api.js";
 import { KnowledgeSourceError } from "./errors.js";
 import { registryFromEnvironment, SourceRegistry } from "./sourceRegistry.js";
 import { FileGraphSource } from "./sources/fileGraph.js";
+
+test("Windows file reveal succeeds once Explorer starts even if it later exits nonzero", async () => {
+  const child = new EventEmitter() as EventEmitter & { unref(): void };
+  let unrefCalled = false;
+  child.unref = () => { unrefCalled = true; };
+  let launch: { file: string; args: string[]; options: Record<string, unknown> } | undefined;
+  const revealing = revealLocalFile("C:\\Notes folder\\source.md", "win32", (file, args, options) => {
+    launch = { file, args, options };
+    queueMicrotask(() => {
+      child.emit("spawn");
+      child.emit("exit", 1);
+    });
+    return child;
+  });
+
+  await assert.doesNotReject(revealing);
+  assert.equal(launch?.file, "explorer.exe");
+  assert.deepEqual(launch?.args, [`/select,\"C:\\Notes folder\\source.md\"`]);
+  assert.equal(launch?.options.windowsVerbatimArguments, true);
+  assert.equal(launch?.options.stdio, "ignore");
+  assert.equal(unrefCalled, true);
+});
+
+test("Windows file reveal reports a real Explorer startup failure", async () => {
+  const child = new EventEmitter() as EventEmitter & { unref(): void };
+  child.unref = () => {};
+  const revealing = revealLocalFile("C:\\Notes\\source.md", "win32", () => {
+    queueMicrotask(() => child.emit("error", new Error("ENOENT")));
+    return child;
+  });
+  await assert.rejects(revealing, (error: unknown) => error instanceof KnowledgeSourceError && error.code === "IO_ERROR");
+});
 
 async function apiServer(sourceOverride?: KnowledgeSource, reveal: (path: string) => Promise<void> = async () => {}, registryOverride?: SourceRegistry) {
   const source = sourceOverride ?? new FileGraphSource(await mkdtemp(join(tmpdir(), "action-pocket-api-")));

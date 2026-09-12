@@ -73,18 +73,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .app-header > strong { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 9px; background: rgba(20, 32, 54, .08); font-size: 12px; letter-spacing: .02em; }
 .product-name { margin-left: 8px; color: var(--muted); font-size: 12px; }
-.source-status {
-  max-width: 210px;
-  margin-left: auto;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.source-status::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #9aa4b2; }
-.source-status.ready::before { background: var(--accent); }
+.header-spacer { flex: 1 1 auto; }
+.app-header .project-switcher { min-width: 0; max-width: 250px; -webkit-app-region: no-drag; }
+.app-header .project-switcher.single { min-width: 0; }
+.app-header .project-switcher label, .app-header .project-switcher-label { white-space: nowrap; }
+.app-header .project-chip { max-width: 150px; }
 .pin-button { display: grid; width: 32px; height: 32px; margin-left: 8px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); -webkit-app-region: no-drag; }
 .pin-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .pin-button:hover, .pin-button.active { background: rgba(20, 32, 54, .08); color: var(--text); }
@@ -250,7 +243,10 @@ kbd { margin-left: 12px; color: rgba(255, 255, 255, .78); font-family: inherit; 
   min-height: 36px;
   padding: 0 10px;
   border-radius: 10px;
-  white-space: normal;
+  overflow: hidden;
+  line-height: 34px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .result-actions .primary { height: 36px; min-height: 36px; }
 .result-actions button:not(.primary) { border: 1px solid var(--control-line); background: var(--glass-strong); color: var(--text); }
@@ -277,7 +273,8 @@ kbd { margin-left: 12px; color: rgba(255, 255, 255, .78); font-family: inherit; 
 .shell-body { scrollbar-color: #9aa4b2 transparent; scrollbar-width: thin; }
 
 @media (max-width: 470px) {
-  .product-name { display: none; }
+  .product-name, .app-header .project-switcher label, .app-header .project-switcher-label { display: none; }
+  .app-header .project-switcher { grid-template-columns: minmax(0, 1fr); }
   .target-editor { grid-template-columns: 1fr; }
   .panel-actions .primary { width: 100%; min-width: 0; }
   .result-actions { grid-template-columns: 1fr; }

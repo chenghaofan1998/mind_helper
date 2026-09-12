@@ -44,6 +44,9 @@ test("main window only switches configured projects and defers configuration to 
   assert.equal((main.match(/id="query-input"/g) ?? []).length, 1);
   assert.match(main, /projectSwitcherModel\(projects, projectId\)/);
   assert.match(main, /id="project-select"/);
+  assert.match(main, /<header class="app-header">[\s\S]*?\$\{renderProjectSwitcher\(\)\}/);
+  assert.doesNotMatch(main, /source-status/);
+  assert.doesNotMatch(main, /<div class="shell-top">\s*\$\{renderTabs\(\)\}\s*\$\{renderProjectSwitcher\(\)\}/);
   assert.match(main, /TRAY_SETTINGS_HINT/);
   // No add-project plus sign and no bottom settings button: the tray owns configuration.
   assert.doesNotMatch(main, /data-action="settings"/);
@@ -64,6 +67,7 @@ test("result card copy and open actions share one stable grid and stack on narro
   const css = await source("src/styles.css");
   assert.match(css, /\.result-actions \{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; \}/);
   assert.match(css, /@media \(max-width: 470px\) \{[\s\S]*?\.result-actions \{ grid-template-columns: 1fr; \}/);
+  assert.match(css, /\.result-actions button \{[\s\S]*?height: 36px;[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap/);
   assert.doesNotMatch(css, /\.result-actions \.primary \{ margin-right: auto/);
 });
 
@@ -74,9 +78,14 @@ test("toast source contract reserves space above the fixed action bar", async ()
   assert.match(css, /\.toast-region \{[^}]*max-width: calc\(100% - 32px\)/);
 });
 
-test("danger modal preserves distinct keyboard-card and clicked-button return targets (source contract)", async () => {
+test("copy handler source contract retains scroll state and danger-modal return-target wiring", async () => {
+  // This checks implementation wiring only; Windows/WebView scroll and focus remain runtime acceptance items.
   const main = await source("src/main.tsx");
   assert.match(main, /copyResult\(result, false, "result-card"\)/);
   assert.match(main, /copyResult\(result, false, "copy-button"\)/);
+  assert.match(main, /const scrollTop = root\.querySelector<HTMLElement>\("\.shell-body"\)\?\.scrollTop \?\? 0;[\s\S]*?render\(\);[\s\S]*?shellBody\.scrollTop = scrollTop/);
+  assert.match(main, /clipboardError = "";\s*renderPreservingShellScroll\(\);\s*focusRiskModal\(\)/);
+  assert.match(main, /if \(riskResultId\) closeRiskModal\(\);\s*showToast/);
+  assert.doesNotMatch(main, /if \(riskResultId\) closeRiskModal\(\); else render\(\)/);
   assert.match(main, /focusRiskReturnTarget\(root\.querySelectorAll/);
 });

@@ -210,12 +210,10 @@ function renderRiskModal(): string {
 }
 
 function render(): void {
-  const source = activeSource();
   root.innerHTML = `<main class="pocket">
-    <header class="app-header"><strong>AP</strong><span class="product-name">Action Pocket</span><span class="source-status ${source ? "ready" : ""}">${loading ? "连接中" : source?.name ?? "未配置"}</span>${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
+    <header class="app-header"><strong>AP</strong><span class="product-name">Action Pocket</span><span class="header-spacer"></span>${renderProjectSwitcher()}${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
     <div class="shell-top">
       ${renderTabs()}
-      ${renderProjectSwitcher()}
       ${mode === "record" ? renderRecordInput() : renderQueryInput()}
     </div>
     <section class="shell-body">
@@ -280,12 +278,19 @@ function focusSelectedResult(): void {
   focusTarget(root.querySelector<HTMLElement>(`[data-result-index="${selectedResultIndex}"]`));
 }
 
+function renderPreservingShellScroll(): void {
+  const scrollTop = root.querySelector<HTMLElement>(".shell-body")?.scrollTop ?? 0;
+  render();
+  const shellBody = root.querySelector<HTMLElement>(".shell-body");
+  if (shellBody) shellBody.scrollTop = scrollTop;
+}
+
 function closeRiskModal(): void {
   const returnTarget = riskReturnTarget;
   riskResultId = "";
   riskReturnTarget = null;
   clipboardError = "";
-  render();
+  renderPreservingShellScroll();
   requestAnimationFrame(() => focusRiskReturnTarget(root.querySelectorAll<HTMLElement>("[data-risk-return]"), returnTarget));
 }
 
@@ -295,22 +300,21 @@ async function copyResult(result: KnowledgeResult, confirmed = false, returnKind
     riskResultId = result.id;
     riskReturnTarget = { resultId: result.id, kind: returnKind };
     clipboardError = "";
-    render();
+    renderPreservingShellScroll();
     focusRiskModal();
     return;
   }
   try {
     await writeClipboard(value);
-    if (riskResultId) closeRiskModal(); else render();
+    if (riskResultId) closeRiskModal();
     showToast(result.kind === "command" ? "已复制；未执行任何命令" : "原文已复制");
   } catch (error) {
     const message = error instanceof Error ? error.message : "无法访问剪贴板，请重试。";
     if (riskResultId) {
       clipboardError = message;
-      render();
+      renderPreservingShellScroll();
       focusRiskModal();
     } else {
-      render();
       showToast(`复制失败：${message}`);
     }
   }

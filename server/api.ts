@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LocateInput, SearchIntent, WriteInput } from "../src/knowledge/types.js";
 import { KnowledgeSourceError, publicError } from "./errors.js";
@@ -87,10 +87,37 @@ function assertJsonRequest(request: IncomingMessage): void {
   }
 }
 
-export async function revealLocalFile(absolutePath: string): Promise<void> {
-  if (process.platform !== "win32") throw new KnowledgeSourceError("CAPABILITY_UNAVAILABLE", "当前平台不支持从小窗定位本地文件，请复制定位后手动打开。");
+type ExplorerProcess = {
+  once(event: "error", listener: (error: Error) => void): ExplorerProcess;
+  once(event: "spawn", listener: () => void): ExplorerProcess;
+  unref(): void;
+};
+
+type ExplorerLauncher = (file: string, args: string[], options: {
+  detached: boolean;
+  stdio: "ignore";
+  windowsHide: boolean;
+  windowsVerbatimArguments: boolean;
+}) => ExplorerProcess;
+
+const launchExplorer: ExplorerLauncher = (file, args, options) => spawn(file, args, options);
+
+export async function revealLocalFile(absolutePath: string, platform = process.platform, launcher: ExplorerLauncher = launchExplorer): Promise<void> {
+  if (platform !== "win32") throw new KnowledgeSourceError("CAPABILITY_UNAVAILABLE", "当前平台不支持从小窗定位本地文件，请复制定位后手动打开。");
   await new Promise<void>((resolve, reject) => {
-    execFile("explorer.exe", [`/select,${absolutePath}`], { windowsHide: true }, (error) => error ? reject(new KnowledgeSourceError("IO_ERROR", "系统未能打开原文位置。")) : resolve());
+    const child = launcher("explorer.exe", [`/select,\"${absolutePath}\"`], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+      windowsVerbatimArguments: true,
+    });
+    child.once("error", () => reject(new KnowledgeSourceError("IO_ERROR", "系统未能打开原文位置。")));
+    // Explorer may report exit code 1 after successfully handing the request to an existing
+    // Explorer process. Successful process creation is the reliable boundary here; never invoke a shell.
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
   });
 }
 
