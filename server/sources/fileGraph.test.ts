@@ -79,6 +79,8 @@ test("parseMarkdown preserves 1-based lines and neighboring semantic blocks", ()
   assert.deepEqual(blocks.map((block) => block.line), [1, 3, 5, 9]);
   assert.equal(blocks[2].kind, "command");
   assert.equal(parseMarkdown("DELETE FROM users")[0].kind, "command");
+  assert.equal(parseMarkdown("- [ ] TODO 发布前检查")[0].kind, "task");
+  assert.equal(parseMarkdown("决策：选择文件型 graph，因为可直接定位原文。")[0].kind, "decision");
 });
 
 test("write appends raw content, creates directories, and returns verified location", async () => {
@@ -108,12 +110,33 @@ test("search returns top-N excerpts with source line and adjacent context", asyn
   assert.ok(results.length <= 3);
 });
 
+test("search recursively indexes Markdown files across multiple directory levels", async () => {
+  const { root, source } = await graph();
+  const directory = join(root, "projects", "alpha", "decisions", "architecture");
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "storage.md"), "# 存储决策\n\n深层目录唯一标记 recursive-nested-marker。\n");
+  const results = await source.search("recursive nested marker", 5);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].location.path, "projects/alpha/decisions/architecture/storage.md");
+});
+
 test("natural-language Chinese queries match meaningful segmented terms", async () => {
   const { root, source } = await graph();
   await writeFile(join(root, "adam.md"), "# Adam\n\n动量帮助优化器平滑梯度方向。\n");
   const results = await source.search("为什么优化器需要动量", 5);
   assert.equal(results.length, 1);
   assert.equal(results[0].location.path, "adam.md");
+});
+
+test("search intent limits results to the selected user-facing type", async () => {
+  const { root, source } = await graph();
+  await writeFile(join(root, "mixed.md"), "普通发布说明 marker\n\n- [ ] TODO 发布 marker\n\n决策：选择灰度发布 marker。\n");
+  const tasks = await source.search("发布 marker", 5, undefined, "task");
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].kind, "task");
+  const decisions = await source.search("发布 marker", 5, undefined, "decision");
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].kind, "decision");
 });
 
 test("duplicate blocks have distinct result identities and source lines", async () => {

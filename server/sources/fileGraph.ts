@@ -8,6 +8,7 @@ import type {
   KnowledgeResult,
   KnowledgeResultKind,
   KnowledgeSource,
+  SearchIntent,
   SourceDescriptor,
   SourceLocation,
   WriteInput,
@@ -70,7 +71,14 @@ function lineKind(text: string): KnowledgeResultKind {
       /^(select|insert|update|delete|drop|truncate)\s+/i.test(clean)) {
     return "command";
   }
+  if (/^\s*[-*]\s+\[[ xX]\]|\bTODO\b|待办|未完成/i.test(clean)) return "task";
+  if (/决策|取舍|权衡|方案对比|选择理由|利弊/i.test(clean)) return "decision";
   return /为什么|理解|概念|原理|means?|because|example|例如/i.test(clean) ? "understanding" : "note";
+}
+
+function matchesIntent(kind: KnowledgeResultKind, intent: SearchIntent | undefined): boolean {
+  if (!intent || intent === "find") return true;
+  return kind === intent;
 }
 
 export function parseMarkdown(content: string, maxBlocks = Number.POSITIVE_INFINITY): TextBlock[] {
@@ -221,7 +229,11 @@ function transientPathError(error: unknown): boolean {
 export class FileGraphSource implements KnowledgeSource {
   private root = "";
 
-  constructor(private readonly graphDirectory: string, private readonly sourceId = "file-graph") {}
+  constructor(
+    private readonly graphDirectory: string,
+    private readonly sourceId = "file-graph",
+    private readonly sourceName = "本地 Markdown 知识源",
+  ) {}
 
   async initialize(): Promise<void> {
     if (!this.graphDirectory || !isAbsolute(this.graphDirectory)) {
@@ -242,7 +254,7 @@ export class FileGraphSource implements KnowledgeSource {
   descriptor(): SourceDescriptor {
     return {
       id: this.sourceId,
-      name: "本地文件知识源",
+      name: this.sourceName,
       capabilities: ["read", "search", "write", "locate"],
       searchMode: "lexical-fallback",
       searchDescription: "本地文件标题与段落词法检索（未使用 embedding/rerank）",
@@ -329,7 +341,7 @@ export class FileGraphSource implements KnowledgeSource {
     }
   }
 
-  async search(query: string, limit: number, signal?: AbortSignal): Promise<KnowledgeResult[]> {
+  async search(query: string, limit: number, signal?: AbortSignal, intent?: SearchIntent): Promise<KnowledgeResult[]> {
     this.ensureInitialized();
     const cleanQuery = query.trim();
     if (!cleanQuery || cleanQuery.length > MAX_SEARCH_QUERY) {
@@ -354,7 +366,7 @@ export class FileGraphSource implements KnowledgeSource {
       if (totalBytes >= MAX_TOTAL_SEARCH_BYTES || totalBlocks >= MAX_BLOCKS) break;
     }
     return documents.flatMap((document) => document.blocks.map((block, index) => ({ document, block, index, score: scoreBlock(cleanQuery, block, document.path) })))
-      .filter((item) => item.score > 0)
+      .filter((item) => item.score > 0 && matchesIntent(item.block.kind, intent))
       .sort((a, b) => b.score - a.score || a.document.path.localeCompare(b.document.path) || a.block.line - b.block.line)
       .slice(0, cappedLimit)
       .map((item) => resultFromBlock(item.document, item.block, item.index, item.score, this.sourceId, this.root));

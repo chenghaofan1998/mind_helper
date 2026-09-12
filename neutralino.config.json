@@ -37,6 +37,7 @@
       "borderless": false,
       "maximize": false,
       "hidden": false,
+      "skipTaskbar": true,
       "resizable": true,
       "enableInspector": false,
       "exitProcessOnClose": false
@@ -47,6 +48,7 @@
     "resourcesPath": "/web-dist/",
     "extensionsPath": "/extensions/",
     "clientLibrary": "/src/neutralino.js",
+    "clientVersion": "6.8.0",
     "binaryVersion": "5.6.0"
   }
 }

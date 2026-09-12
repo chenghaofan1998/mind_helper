@@ -29,6 +29,7 @@ test("standalone server serves the production UI and authenticated knowledge API
     assert.equal(page.status, 200);
     assert.match(await page.text(), /action-pocket-session-token" content="test-token"/);
     assert.equal(page.headers.get("x-frame-options"), "DENY");
+    assert.match(page.headers.get("content-security-policy") ?? "", /connect-src 'self' ws:\/\/127\.0\.0\.1:\*/);
 
     const unauthorized = await fetch(`${base}/api/sources`);
     assert.equal(unauthorized.status, 403);

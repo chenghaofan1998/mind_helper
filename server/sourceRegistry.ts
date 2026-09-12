@@ -1,6 +1,7 @@
 import type { KnowledgeSource, SourceDescriptor } from "../src/knowledge/types.js";
 import { KnowledgeSourceError } from "./errors.js";
 import { FileGraphSource } from "./sources/fileGraph.js";
+import { HttpConnectorSource } from "./sources/httpConnector.js";
 
 export class SourceRegistry {
   private readonly sources = new Map<string, KnowledgeSource>();
@@ -27,8 +28,21 @@ export class SourceRegistry {
 
 export async function registryFromEnvironment(environment: NodeJS.ProcessEnv = process.env): Promise<SourceRegistry> {
   const registry = new SourceRegistry();
+  const graphKind = environment.AP_GRAPH_KIND ?? "markdown-files";
+  if (!(["markdown-files", "logseq-files"] as string[]).includes(graphKind)) {
+    throw new KnowledgeSourceError("NOT_CONFIGURED", "AP_GRAPH_KIND 只能是 markdown-files 或 logseq-files。");
+  }
+  if (environment.AP_GRAPH_KIND && !environment.AP_GRAPH_DIR) {
+    throw new KnowledgeSourceError("NOT_CONFIGURED", "设置 AP_GRAPH_KIND 时必须同时设置 AP_GRAPH_DIR。");
+  }
   if (environment.AP_GRAPH_DIR) {
-    const source = new FileGraphSource(environment.AP_GRAPH_DIR);
+    const sourceName = graphKind === "logseq-files" ? "Logseq 文件 Graph" : "本地 Markdown 知识源";
+    const source = new FileGraphSource(environment.AP_GRAPH_DIR, "file-graph", sourceName);
+    await source.initialize();
+    registry.register(source);
+  }
+  if (environment.AP_CONNECTOR_URL) {
+    const source = new HttpConnectorSource(environment.AP_CONNECTOR_URL, environment.AP_CONNECTOR_TOKEN);
     await source.initialize();
     registry.register(source);
   }

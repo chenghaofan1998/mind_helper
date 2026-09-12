@@ -13,11 +13,11 @@ Action Pocket 是一个**小窗 + 后台**的知识行动入口：小窗负责�
 | 文件 | 用途 |
 |---|---|
 | `IMPLEMENTATION-NOTES.md` | **范围权威**：逐图「保留 / 简化 / 不做」注记与阶段验收 |
-| `generated/gpt-image-2/*.png` | 10 张已生成的视觉探索图，仅供评审与参考 |
+| `generated/gpt-image-2/*.png` | P0 四个任务的 10 张 v2 状态图，仅供评审与参考 |
 | `ui/*.svg` | 8 张可编辑结构稿，用于约束布局，非最终视觉 |
-| `gpt-image-2-prompts.json` | 10 个统一风格的 GPT Image 2 分镜提示词 |
+| `gpt-image-2-prompts.json` | P0 四个任务的 10 条主态/异常态提示词，输出使用 v2 文件名 |
 | `generate-gpt-image-2.mjs` | 固定使用 `gpt-image-2` 的正式生图脚本 |
-| `UI-GENERATION-BRIEF.md` | 生图输入、输出和评审标准 |
+| `UI-GENERATION-BRIEF.md` | 现有 10 图逐张纠偏、规划冲突口径、生图输入与验收标准 |
 | `PRODUCT-FLOWS.md` | 功能范围、状态与验收 |
 | `SCREENSHOT-AND-VISION.md` | 一次性截图、多模态分析与 RAG 联动 |
 | `CONNECTOR-API.md` | 标准知识源接口与扩展规则 |
@@ -30,11 +30,11 @@ Action Pocket 是一个**小窗 + 后台**的知识行动入口：小窗负责�
 
 ```bash
 OPENAI_API_KEY=*** npm run design:generate
-# 单张重试
-OPENAI_API_KEY=*** npm run design:generate -- --only=05-screenshot-capture.png
+# 单张生成（先确认目标文件不存在）
+OPENAI_API_KEY=*** npm run design:generate -- --only=01-quick-capture-v2-default.png
 ```
 
-脚本固定调用官方 `gpt-image-2` 和 `v1/images/generations`，以高质量 1536×1024 PNG 输出到 `generated/gpt-image-2/`。10 张图已由外部生图工具完成并入库（约 13 MiB），脚本保留用于重生成与后续版本。
+脚本固定调用官方 `gpt-image-2` 和 `v1/images/generations`，以高质量 1536×1024 PNG 输出到 `generated/gpt-image-2/`。当前目录只保留 P0 的 10 张 v2 主态/异常态；旧版 01–10 PNG 已移除，历史问题与范围取舍保留在 Brief 和实现注记中。脚本只读取 JSON 提示词，不自动读取 Brief，也不会防止同名覆盖；重试前须将目标改为未使用的版本文件名。详见 [`UI-GENERATION-BRIEF.md`](UI-GENERATION-BRIEF.md)。
 
 ## 视觉方向
 
@@ -50,7 +50,7 @@ OPENAI_API_KEY=*** npm run design:generate -- --only=05-screenshot-capture.png
 
 **P1（第二闭环）**：一次性截图 → 选区 → 预览 → 分析 → 联合查询。
 
-**P2（需真实数据支撑）**：固定/有用反馈、遮挡编辑、多来源切换、Derived 渲染。
+**P2（需真实数据支撑）**：遮挡编辑、多来源切换、Derived 渲染、负反馈。
 
 **本轮不做**：观察会话、架构图页面、能力矩阵、凭据管理 UI、多模型路由。
 
@@ -59,7 +59,7 @@ OPENAI_API_KEY=*** npm run design:generate -- --only=05-screenshot-capture.png
 ## 明确边界
 
 - 一次性截图进入下一版 MVP；图片文件和实时观察仍按真实需求逐项验证。
-- 截图必须由独立热键或显式按钮触发，并在发送前预览、遮挡和确认。
+- 截图必须由独立热键或显式按钮触发，并在发送前预览、允许重选并确认。
 - 不默认读取剪贴板、屏幕、键盘、摄像头或麦克风；一次截图绝不自动升级为持续观察。
 - 原始证据与 AI/RAG 派生结果必须分开展示。
 - 固定、反馈和临时状态不得形成第二套正文库。

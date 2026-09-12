@@ -1,10 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { WriteInput } from "../src/knowledge/types.js";
+import type { SearchIntent, WriteInput } from "../src/knowledge/types.js";
 import { KnowledgeSourceError, publicError } from "./errors.js";
 import type { SourceRegistry } from "./sourceRegistry.js";
 
 const MAX_JSON_BYTES = 300 * 1024;
+const SEARCH_INTENTS = new Set<SearchIntent>(["find", "command", "understanding", "task", "decision"]);
 
 type Next = (error?: unknown) => void;
 
@@ -39,14 +40,17 @@ function objectBody(value: unknown): Record<string, unknown> {
 }
 
 function errorStatus(code: string): number {
-  if (code === "NOT_FOUND") return 404;
-  if (code === "CAPABILITY_UNAVAILABLE") return 409;
-  if (code === "NOT_CONFIGURED") return 503;
-  if (code === "IO_ERROR") return 500;
+  if (code === "UNAUTHORIZED") return 401;
   if (code === "FORBIDDEN") return 403;
-  if (code === "UNSUPPORTED_MEDIA_TYPE") return 415;
+  if (code === "NOT_FOUND") return 404;
+  if (code === "CAPABILITY_UNAVAILABLE" || code === "SOURCE_STALE") return 409;
   if (code === "PAYLOAD_TOO_LARGE") return 413;
-  if (code === "TIMEOUT") return 408;
+  if (code === "UNSUPPORTED_MEDIA_TYPE") return 415;
+  if (code === "RATE_LIMITED") return 429;
+  if (code === "IO_ERROR") return 500;
+  if (code === "UPSTREAM_UNAVAILABLE") return 502;
+  if (code === "NOT_CONFIGURED") return 503;
+  if (code === "TIMEOUT") return 504;
   return 400;
 }
 
@@ -100,16 +104,21 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
       assertJsonRequest(request);
       const body = objectBody(await readJson(request));
       if (pathname === "/api/search") {
-        if (typeof body.query !== "string") throw new KnowledgeSourceError("INVALID_INPUT", "查询内容必须是字符串。");
+        if (typeof body.query !== "string" || !body.query.trim() || body.query.length > 500) {
+          throw new KnowledgeSourceError("INVALID_INPUT", "查询内容必须为 1–500 个字符。");
+        }
         if (Object.hasOwn(body, "sourceId") && typeof body.sourceId !== "string") {
           throw new KnowledgeSourceError("INVALID_INPUT", "sourceId 必须是字符串。");
         }
         if (Object.hasOwn(body, "limit") && (typeof body.limit !== "number" || !Number.isInteger(body.limit) || body.limit < 1 || body.limit > 5)) {
           throw new KnowledgeSourceError("INVALID_INPUT", "limit 必须是 1–5 的整数。");
         }
-        const sourceId = body.sourceId as string | undefined ?? registry.descriptors()[0]?.id;
+        if (Object.hasOwn(body, "intent") && (typeof body.intent !== "string" || !SEARCH_INTENTS.has(body.intent as SearchIntent))) {
+          throw new KnowledgeSourceError("INVALID_INPUT", "intent 必须是 find、command、understanding、task 或 decision。");
+        }
+        const sourceId = body.sourceId as string | undefined ?? registry.descriptors().find((source) => source.capabilities.includes("search"))?.id;
         const limit = body.limit as number | undefined ?? 5;
-        if (!sourceId) throw new KnowledgeSourceError("NOT_CONFIGURED", "未配置知识源；请设置 AP_GRAPH_DIR 后重启开发服务。");
+        if (!sourceId) throw new KnowledgeSourceError("NOT_CONFIGURED", "尚未连接可检索的知识源。");
         const source = registry.require(sourceId, "search");
         const controller = new AbortController();
         const abort = () => controller.abort();
@@ -117,7 +126,12 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
         request.once("aborted", abort);
         response.once("close", abortOnClose);
         try {
-          send(response, 200, { results: await source.search(body.query, limit, controller.signal) });
+          const results = await source.search(body.query, limit, controller.signal, body.intent as SearchIntent | undefined);
+          send(response, 200, {
+            results,
+            ...(results.requestId ? { requestId: results.requestId } : {}),
+            ...(results.retrievalMode ? { retrievalMode: results.retrievalMode } : {}),
+          });
         } finally {
           request.off("aborted", abort);
           response.off("close", abortOnClose);

@@ -1,5 +1,4 @@
-import { app, events, init, os, window as neutralinoWindow } from "@neutralinojs/lib";
-import { trayAction } from "./desktopActions";
+import { events, init, window as neutralinoWindow } from "@neutralinojs/lib";
 
 interface DesktopCallbacks {
   onPinnedChange(value: boolean): void;
@@ -11,26 +10,15 @@ let initialized = false;
 let pinned = false;
 let callbacks: DesktopCallbacks | undefined;
 
-function trayOptions() {
-  return {
-    icon: "/action-pocket.png",
-    menuItems: [
-      { id: "show", text: "打开 Action Pocket" },
-      { id: "toggle-pin", text: "窗口置顶", isChecked: pinned },
-      { id: "exit", text: "退出" },
-    ],
-  };
-}
-
-async function updateTray(): Promise<void> {
-  await os.setTray(trayOptions());
+function hasNativeBridge(): boolean {
+  const runtime = window as Window & { NL_PORT?: number | string; NL_TOKEN?: string };
+  return Number.isFinite(Number(runtime.NL_PORT)) && Number(runtime.NL_PORT) > 0 && typeof runtime.NL_TOKEN === "string";
 }
 
 export async function toggleDesktopPin(): Promise<boolean> {
   if (!nativeRuntime) return false;
   pinned = !pinned;
   await neutralinoWindow.setAlwaysOnTop(pinned);
-  await updateTray();
   callbacks?.onPinnedChange(pinned);
   return pinned;
 }
@@ -49,18 +37,21 @@ export function isDesktopRuntime(): boolean {
   return nativeRuntime;
 }
 
-export function initializeDesktopRuntime(nextCallbacks: DesktopCallbacks): void {
-  if (initialized || typeof window.NL_PORT !== "number") return;
+function connectDesktopRuntime(nextCallbacks: DesktopCallbacks): boolean {
+  if (initialized || !hasNativeBridge()) return initialized;
   initialized = true;
   nativeRuntime = true;
   callbacks = nextCallbacks;
   init();
-  void events.on("windowClose", () => { void hideDesktopWindow(); });
-  void events.on("trayMenuItemClicked", (event) => {
-    const action = trayAction((event.detail as { id?: unknown } | undefined)?.id);
-    if (action === "show") void showDesktopWindow();
-    if (action === "toggle-pin") void toggleDesktopPin().catch((error) => nextCallbacks.onError(String(error)));
-    if (action === "exit") void app.exit();
+  void events.on("windowClose", () => {
+    void hideDesktopWindow().catch((error) => nextCallbacks.onError(`隐藏窗口失败：${String(error)}`));
   });
-  void updateTray().catch((error) => nextCallbacks.onError(`托盘初始化失败：${String(error)}`));
+  return true;
+}
+
+export function initializeDesktopRuntime(nextCallbacks: DesktopCallbacks): void {
+  if (connectDesktopRuntime(nextCallbacks)) return;
+  window.setTimeout(() => {
+    if (!connectDesktopRuntime(nextCallbacks)) nextCallbacks.onError("桌面桥接未就绪；仍可从系统托盘退出。" );
+  }, 250);
 }

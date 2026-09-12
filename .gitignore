@@ -1,5 +1,7 @@
 # 依赖与构建临时产物
 node_modules/
+bin/
+src/neutralino.d.ts
 *.tmp
 *.log
 .DS_Store

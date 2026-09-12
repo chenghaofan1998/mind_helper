@@ -1,52 +1,52 @@
 [
   {
-    "file": "01-quick-capture.png",
-    "title": "快速记入",
-    "prompt": "Create a polished production-feasible desktop UI mockup for Action Pocket, an always-on-top knowledge launcher. Show a compact 560x680 Windows utility window in capture mode. Chinese UI copy must be legible: 记入, 查询, 先接住，不打断当前事情, 原始内容, 写入位置, 保存到知识库. The user is saving a short personal understanding note into Logseq. Deep graphite green title bar, warm off-white surface, jade green primary action, restrained premium productivity aesthetic, excellent spacing and typography, complete window boundary, no device mockup, no marketing background, no chatbot bubbles, no glassmorphism. Evidence-first and implementation-feasible controls."
+    "file": "01-quick-capture-v2-default.png",
+    "title": "P0 快速记入 · 待保存",
+    "prompt": "Design one production-feasible Action Pocket Windows utility state. Complete 560x680 logical window, centered without stretching on a 1536x1024 canvas. Fixed AP wordmark, compact 40px title bar, 记入 / 查询 tabs, 16px padding, 14px Chinese body text, 8px spacing, minimal shadows. Graphite #183A32 shell, #FAFAF7 surface, #276B5D primary. Capture tab selected. Main textarea contains exactly: 我把 Adam 的一阶矩理解为：给最近的梯度多一点权重，让更新方向不被单次波动带偏。 Below show one compact destination line: 个人知识库 · pages/Inbox.md with 更改. One primary button 保存到知识库 with Ctrl+Enter. Small 设置 entry and window pin control. This is an unsaved draft, no success receipt. Mark 设计样例 outside the window. No slogans, hero cards, extra navigation, character limits, tags, attachments, generated summary, screenshot entry, macOS shell or invented shortcuts. Keep input dominant and all controls inside the viewport."
   },
   {
-    "file": "02-rag-search.png",
-    "title": "RAG 查询",
-    "prompt": "Design a polished compact Action Pocket desktop utility window for semantic knowledge retrieval. Chinese UI copy: 查询, 现在遇到什么问题？, 我以前为什么觉得 Adam 的动量容易理解？, 知识库 RAG, 混合检索, 索引已更新. Show clear source health and retrieval mode. 560x680 always-on-top window, graphite green shell, warm white cards, jade accents, quiet trustworthy aesthetic, no AI mascot, no generic chat interface, no decorative charts, highly legible Chinese typography, production-feasible desktop controls."
+    "file": "01-quick-capture-v2-write-failed.png",
+    "title": "P0 快速记入 · 写入失败",
+    "prompt": "Design the write-failed state of an Action Pocket Windows utility. Complete 560x680 logical window centered proportionally on a 1536x1024 canvas. AP wordmark, 40px title bar, only 记入 / 查询 tabs, 16px padding, 14px Chinese text, 8px spacing. #183A32 shell, #FAFAF7 surface, #276B5D primary, #C54B43 error. Capture tab selected. Preserve this entire draft visibly in the textarea: 我把 Adam 的一阶矩理解为：给最近的梯度多一点权重，让更新方向不被单次波动带偏。 Destination line: 个人知识库 · pages/Inbox.md, 更改. Inline error: 写入失败：知识源不可用，输入已保留。 One primary action 重试保存 with Ctrl+Enter; secondary 设置. Error must not cover the draft. Mark 设计样例 outside the window. No success check, cleared input, invented receipt, slogans, counters, extra navigation, attachments, cloud promises or different window shell."
   },
   {
-    "file": "03-rag-results.png",
-    "title": "证据化结果",
-    "prompt": "Create a high-fidelity Action Pocket result window. Clearly separate three layers with Chinese labels: 截图观察 or 查询意图, 知识库原文, 派生提示. Show one primary RAG result with verbatim excerpt, necessary context, pages/Adam.md, line number, block and version, plus buttons 复制原文 and 打开知识库原文, and small actions 固定, 有用, 没解决. Compact 560x680 desktop utility, jade green emphasis, warm off-white, graphite shell, restrained and accessible, no fake analytics, no chatbot bubbles, complete realistic window."
+    "file": "02-rag-search-v2-ready.png",
+    "title": "P0 查询 · 待提交",
+    "prompt": "Design one pre-submit query state for Action Pocket, not a results page. Windows utility with fixed AP wordmark, 40px title bar and only 记入 / 查询 tabs, 查询 selected. Complete 560x680 logical window centered proportionally on a 1536x1024 canvas. #183A32 shell, #FAFAF7 surface, #276B5D action, 14px Chinese text, 16px padding, 8px spacing, minimal shadows. Question label 现在遇到什么问题？ Input exactly: 我以前怎么理解 Adam 的一阶矩？ One primary 查询 button with Enter. Read-only status line: 个人知识库 · 知识源返回模式：RAG. This mode is a design fixture; mark 设计样例 outside the window. Keep unused space quiet, not filled with cards. No search results yet, no 综合回答, no 知识库 / 笔记 / 灵感 navigation, model picker, retrieval dropdowns, example chips, index freshness claim, screenshot entry, slogan or chatbot."
   },
   {
-    "file": "04-command-risk.png",
-    "title": "危险命令确认",
-    "prompt": "Design an accessible safety confirmation state inside Action Pocket for copying a destructive command. Show the source command git reset --hard HEAD~1, source citation, and a centered modal with Chinese copy: 复制前确认, 这条命令会丢弃未提交修改, Action Pocket 只会复制，不会执行, 取消, 仍然复制. Default safe action visually emphasized through focus, restrained red warning color, not alarming, keyboard hints Esc and Tab. Compact production-ready desktop UI, graphite green and warm white palette, no terminal execution button."
+    "file": "02-rag-search-v2-no-results.png",
+    "title": "P0 查询 · 无结果与词法模式",
+    "prompt": "Design the no-results state of Action Pocket. Same compact Windows shell, AP wordmark, 40px title bar, only 记入 / 查询 tabs with 查询 selected. Complete 560x680 logical window at its original ratio centered on a 1536x1024 canvas. #183A32, #FAFAF7, #276B5D palette, 14px Chinese text, 16px padding, 8px spacing. Keep the editable question: 我以前怎么理解 Adam 的一阶矩？ Read-only status: 个人知识库 · 本地词法检索，未使用 RAG. Main content: 未找到相关原文, followed by 可修改问题后重试，或打开知识库查找。 One primary 查询 button with Enter, secondary 打开知识库. Mark 设计样例 outside the window. No invented evidence, generated answer, empty decorative illustration, RAG success badge, model controls, extra navigation, index freshness, new explanation or screenshot entry."
   },
   {
-    "file": "05-screenshot-capture.png",
-    "title": "截图选区",
-    "prompt": "Create a production-feasible desktop screenshot capture overlay for Action Pocket. Dim a realistic software workspace, show a user-selected rectangular region containing an error message, with resize handles and a compact floating toolbar. Chinese toolbar copy: 重新选择, 遮挡敏感信息, 取消 Esc, 使用此截图. Clearly indicate 一次性截图 and 仅保留到本次请求结束. Elegant graphite and jade visual language, privacy-first, no surveillance aesthetic, no camera imagery, no futuristic HUD."
+    "file": "02-rag-search-v2-unavailable.png",
+    "title": "P0 查询 · 来源不可用",
+    "prompt": "Design an Action Pocket query failure state in the same AP-branded Windows utility. Complete 560x680 logical window centered proportionally on a 1536x1024 canvas. 40px title bar, only 记入 / 查询 tabs, 查询 selected, 16px padding, 14px Chinese text, 8px spacing. #183A32 shell, #FAFAF7 surface, #276B5D action, #C54B43 error. Preserve editable question exactly: 我以前怎么理解 Adam 的一阶矩？ Status: 个人知识库 · 连接失败. Inline explanation: 知识源暂不可用，问题已保留。 One primary 重试查询 action, secondary 打开设置. Do not confuse connection failure with zero matches, and do not show previous results as current. Mark 设计样例 outside the window. No successful retrieval, silent lexical fallback, generated answer, source metadata, dashboard, extra navigation, model picker or privacy claims."
   },
   {
-    "file": "06-screenshot-analysis.png",
-    "title": "截图分析与知识库联动",
-    "prompt": "Design an Action Pocket compact window after a screenshot was captured. At top show a small screenshot preview with one redacted region. Below, show distinct sections: 截图观察 with extracted visible facts, 建议问题 with an editable query, and 数据去向 showing 多模态模型 → 仅问题文本发送到知识库 RAG. Primary button: 分析并查询知识库. Secondary: 仅分析. Include provider and retention information. 560x760 desktop utility, refined graphite green, warm white, jade accents, highly legible Chinese, no chat bubbles, explicit privacy and evidence separation."
+    "file": "03-rag-results-v2-concept.png",
+    "title": "P0 原文结果 · 理解片段",
+    "prompt": "Design an evidence-first Action Pocket result state. Fixed AP wordmark, compact Windows 40px title bar, only 记入 / 查询 tabs with 查询 selected. Complete 560x680 logical window centered without stretching on a 1536x1024 canvas. #183A32 shell, #FAFAF7 content, #276B5D primary, 14px Chinese text, 16px padding, 8px spacing. Compact query: 我以前怎么理解 Adam 的一阶矩？ Read-only mode: 知识源返回模式：RAG. Show one dominant result labeled 知识库原文, exact excerpt: 我把一阶矩理解为最近梯度的加权平均：像带记忆的方向，最近的梯度权重更大。它不是完整的 Adam；二阶矩还用于调整更新尺度。 Source: pages/Adam.md · 第 120–122 行 · 来源版本 rev-adam-01. Treat this as readable prose, not a code listing. Primary 复制原文, secondary 打开原文, small 固定 and 有用 actions. Mark 设计样例 outside the window. No screenshot topic, query-intent card, 综合回答, 派生提示, similarity scores, negative feedback, invented sources, app version presented as source version, chat or extra navigation."
   },
   {
-    "file": "07-backstage-connectors.png",
-    "title": "后台连接器",
-    "prompt": "Create a high-fidelity 1280x820 desktop settings window for Action Pocket. Left navigation: 知识源, 多模态模型, 全局热键, 隐私与权限, 观察能力, 诊断. Main area shows two connector cards: 工作知识库 with RAG, 写入, 原文定位, 状态 capabilities and healthy status; 文件型 Graph marked 词法降级. Also show a multimodal connector with vision-analysis capability, supported PNG/JPEG/WebP, cloud/local processing and retention policy. Quiet enterprise-grade productivity UI, graphite sidebar, warm white content, jade green accents, no dashboard clutter."
+    "file": "03-rag-results-v2-command.png",
+    "title": "P0 原文结果 · 命令与风险提示",
+    "prompt": "Design a command source result for Action Pocket, not a command execution app. Complete 560x680 logical Windows utility centered at correct ratio on a 1536x1024 canvas. Fixed AP wordmark, 40px title bar, only 记入 / 查询 tabs, 查询 selected. #183A32 shell, #FAFAF7 surface, #276B5D actions, #C54B43 warnings, 14px Chinese body text, 16px padding, 8px spacing. Query: 把当前分支退回前一个提交，放弃已跟踪文件的本地修改。 Label 知识库原文. A monospace block contains exactly git reset --hard HEAD~1. Source: pages/Git.md · 第 40–44 行 · 来源版本 rev-git-01. Warning: 当前分支将退回前一个提交，并丢弃已跟踪文件在暂存区和工作区的未提交修改。 One primary 复制命令 action, note 复制前需确认；只复制，不执行. Secondary 打开原文, small 固定 and 有用. Mark 设计样例 outside the window. No execute button, safe rating, invented repository inspection, guarantee of recovery, blanket irreversible claim, sidebar categories, generated advice or extra navigation."
   },
   {
-    "file": "08-hotkey-product-shape.png",
-    "title": "小窗与后台形态",
-    "prompt": "Design a clean product architecture storyboard for Action Pocket showing a tray background process, Ctrl+Alt+P opening a single always-on-top small window, Ctrl+Alt+Shift+P starting one-time region screenshot, Esc hiding or cancelling, and a separate backstage settings window. Use Chinese labels, clear arrows, desktop-native visual language, graphite green and jade palette, warm off-white cards, no keyboard hook, no monitoring by default. Make it look like a product design board, not a marketing infographic."
+    "file": "03-rag-results-v2-source-unavailable.png",
+    "title": "P0 原文结果 · 固定来源失效",
+    "prompt": "Design an unavailable-source state for a pinned Action Pocket reference. Complete 560x680 logical Windows utility centered proportionally on a 1536x1024 canvas. Fixed AP wordmark, 40px title bar, only 记入 / 查询 tabs with 查询 selected. #183A32 shell, #FAFAF7 content, #276B5D primary, 14px Chinese text, 16px padding, 8px spacing. Preserve query: 我以前怎么理解 Adam 的一阶矩？ Show reference pages/Adam.md · 第 120–122 行 and explicitly label 已记录来源版本 rev-adam-01，当前版本未知. Main message: 原文暂不可访问，可能已删除或权限发生变化。 Do not show a cached body as current evidence. Primary 重新查询, secondary 取消固定. Show 复制原文 disabled with explanation 原文不可用. Mark 设计样例 outside the window. No successful citation badge, fabricated replacement excerpt, generated answer, permission bypass, local body archive, new navigation, monitoring or invented definitive cause."
   },
   {
-    "file": "09-monitoring-consent.png",
-    "title": "未来观察授权",
-    "prompt": "Create a privacy-first future capability permission screen for Action Pocket. Chinese labels: 未来能力 · 默认关闭, 开始一次可见的观察会话, 观察范围, 保留策略, 数据去向, 随时停止. Show selected application-only scope, local model processing, raw frames kept only in memory, continuous visible tray status, and Cancel / 我理解并开始本次会话 buttons. Premium restrained desktop UI, warm white and graphite green, subtle red caution, absolutely no surveillance aesthetic or hidden monitoring implication."
+    "file": "04-command-risk-v2-confirm.png",
+    "title": "P0 危险复制 · 取消默认聚焦",
+    "prompt": "Design a safety modal INSIDE the same compact Action Pocket Windows result utility, never a full-size dashboard. Complete 560x680 logical window centered proportionally on a 1536x1024 canvas. AP wordmark, 40px title bar, only 记入 / 查询 tabs in dimmed background. #183A32 shell, #FAFAF7 surfaces, #276B5D safe action, subtle #C54B43 warning, 14px Chinese text, 16px padding, 8px spacing. Modal title 复制前确认. INSIDE the modal show the exact monospace command git reset --hard HEAD~1 and source pages/Git.md · 第 40–44 行 · 来源版本 rev-git-01. Warning: 当前分支将退回前一个提交，并丢弃已跟踪文件在暂存区和工作区的未提交修改。 Explicitly state Action Pocket 只会复制，不会执行。 Buttons 取消 and 仍然复制; 取消 has visible keyboard focus outline and stronger safe emphasis. Footer hint: Esc 取消 · Tab / Shift+Tab 切换焦点. Never place Tab on the copy button as its activation shortcut. Mark 设计样例 outside the window. No execute button, invented backups, blanket irreversible claim, macOS controls, category sidebar, slogan or extra navigation."
   },
   {
-    "file": "10-input-output-architecture.png",
-    "title": "输入输出架构",
-    "prompt": "Create a sophisticated but implementation-focused architecture design board for Action Pocket. Four columns with Chinese labels: 输入信封, Connector Gateway, 知识库与模型, 可信输出. Inputs include 文字, 一次性截图, 图片, 未来观察事件. Connectors show capabilities, authentication, timeout, version and privacy. Knowledge systems own RAG, rerank, permissions and source documents; multimodal model analyzes screenshots. Outputs clearly separate 模型观察, 知识库原文, 派生建议. Graphite green, warm white, jade accents, clean product design diagram, no futuristic HUD, no meaningless icons."
+    "file": "04-command-risk-v2-copy-failed.png",
+    "title": "P0 危险复制 · 剪贴板失败",
+    "prompt": "Design the clipboard-failure state of a safety modal INSIDE the same Action Pocket Windows utility. Complete 560x680 logical window centered at its original ratio on a 1536x1024 canvas. AP wordmark, compact 40px title bar, only 记入 / 查询 tabs in dimmed background. #183A32 shell, #FAFAF7 surface, #276B5D safe action, #C54B43 error, 14px Chinese text, 16px padding, 8px spacing. Keep the modal open. Title 复制前确认. Keep full command git reset --hard HEAD~1 and source pages/Git.md · 第 40–44 行 · 来源版本 rev-git-01 inside it. Keep warning: 当前分支将退回前一个提交，并丢弃已跟踪文件在暂存区和工作区的未提交修改。 State Action Pocket 只会复制，不会执行。 Add inline error 复制失败：无法访问剪贴板，请重试。 Buttons 取消 and 重试复制. Footer Esc 取消 · Tab / Shift+Tab 切换焦点, with a visible focus outline on one modal button. Mark 设计样例 outside the window. No 已复制 checkmark, automatic close, auto-execution, duplicate background action, category sidebar, macOS shell or invented privacy guarantees."
   }
 ]

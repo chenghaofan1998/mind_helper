@@ -1,7 +1,8 @@
 import type {
   KnowledgeErrorCode,
-  KnowledgeResult,
+  KnowledgeSearchResults,
   SearchInput,
+  SearchResponse,
   SourceDescriptor,
   SourcesResponse,
   WriteInput,
@@ -67,12 +68,15 @@ export async function listSources(): Promise<SourceDescriptor[]> {
   return (await requestJson<SourcesResponse>("/api/sources")).sources;
 }
 
-export async function searchKnowledge(input: SearchInput): Promise<KnowledgeResult[]> {
-  const response = await requestJson<{ results: KnowledgeResult[] }>("/api/search", {
+export async function searchKnowledge(input: SearchInput): Promise<KnowledgeSearchResults> {
+  const response = await requestJson<SearchResponse>("/api/search", {
     method: "POST",
     body: JSON.stringify(input),
   });
-  return response.results;
+  const results = response.results as KnowledgeSearchResults;
+  results.requestId = response.requestId;
+  results.retrievalMode = response.retrievalMode;
+  return results;
 }
 
 export async function writeKnowledge(input: WriteInput): Promise<WriteReceipt> {
