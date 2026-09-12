@@ -7,8 +7,8 @@ namespace ActionPocketLauncher
 {
     /// <summary>
     /// UI-free self-test used by the build script and by "<c>--self-test</c>". It covers the pure
-    /// pieces (project serialization and dedup, project document rules and restart policy) so a
-    /// broken launcher fails the build instead of only failing on a real desktop.
+    /// pieces (project serialization and dedup, shortcut rules, project document rules and restart
+    /// policy) so a broken launcher fails the build instead of only failing on a real desktop.
     /// </summary>
     internal static class SelfTest
     {
@@ -70,10 +70,42 @@ namespace ActionPocketLauncher
                 }
                 catch (InvalidOperationException) { rejectedEmptyName = true; }
 
+                HotkeyBinding defaultHotkey = HotkeyBinding.Default();
+                bool shortcutDisplay = HotkeyRules.Display(defaultHotkey) == "Ctrl+Alt+P" && HotkeyRules.Modifiers(defaultHotkey) == 0x0003;
+                bool rejectedBareKey = false;
+                try { HotkeyRules.Validate(new HotkeyBinding { key = (int)System.Windows.Forms.Keys.P }); }
+                catch (InvalidOperationException) { rejectedBareKey = true; }
+                LauncherSettingsDocument shortcutDocument = new LauncherSettingsDocument { hotkey = new HotkeyBinding { control = true, shift = true, key = (int)System.Windows.Forms.Keys.Space } };
+                string shortcutJson = new JavaScriptSerializer().Serialize(shortcutDocument);
+                LauncherSettingsDocument restoredShortcut = new JavaScriptSerializer().Deserialize<LauncherSettingsDocument>(shortcutJson);
+
+                string projectState = "old-projects";
+                string launcherState = "old-launcher";
+                bool secondSaveRolledBack = false;
+                try
+                {
+                    SettingsPersistenceTransaction.Commit(
+                        delegate { projectState = "new-projects"; },
+                        delegate { launcherState = "partial-launcher"; throw new IOException("injected second save failure"); },
+                        delegate { projectState = "old-projects"; },
+                        delegate { launcherState = "old-launcher"; });
+                }
+                catch (InvalidOperationException error)
+                {
+                    secondSaveRolledBack = error.InnerException is IOException
+                        && projectState == "old-projects" && launcherState == "old-launcher";
+                }
+                bool hotkeyRollbackFailureVisible = HotkeyRebindPolicy.AfterCandidateFailure(
+                    defaultHotkey,
+                    delegate { return false; }) == HotkeyRebindResult.RollbackFailed;
+
                 return port > 0 && port <= 65535 && restored != null && restored.projects.Count == 1
                     && starts == 3 && !willRetry
                     && importedLegacy && importedAdded && deduplicated && imported.projects.Count == 2
-                    && normalizedActive && normalizedEmpty && rejectedEmptyName ? 0 : 1;
+                    && normalizedActive && normalizedEmpty && rejectedEmptyName
+                    && shortcutDisplay && rejectedBareKey && restoredShortcut != null
+                    && HotkeyRules.Display(restoredShortcut.hotkey) == "Ctrl+Shift+Space"
+                    && secondSaveRolledBack && hotkeyRollbackFailureVisible ? 0 : 1;
             }
             catch { return 1; }
         }

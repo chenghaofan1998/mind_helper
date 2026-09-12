@@ -5,10 +5,10 @@
   background: transparent;
   font-synthesis: none;
   /* Today AI reference: clear white glass, near-black text, only tiny blue/peach diffuse tint. */
-  --glass: rgba(255, 255, 255, .70);
-  --glass-strong: rgba(255, 255, 255, .78);
-  --glass-soft: rgba(255, 255, 255, .55);
-  --glass-veil: rgba(255, 255, 255, .38);
+  --glass: rgba(255, 255, 255, .84);
+  --glass-strong: rgba(255, 255, 255, .92);
+  --glass-soft: rgba(255, 255, 255, .74);
+  --glass-veil: rgba(255, 255, 255, .62);
   --text: #14161c;
   --muted: #4c5566;
   --primary: #17191f;
@@ -69,8 +69,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   padding: 0 16px;
   background: transparent;
   color: var(--text);
+  cursor: move;
+  user-select: none;
+  -webkit-user-select: none;
   -webkit-app-region: drag;
 }
+.app-header button, .app-header select { cursor: pointer; }
 .app-header > strong { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 9px; background: rgba(20, 32, 54, .08); font-size: 12px; letter-spacing: .02em; }
 .product-name { margin-left: 8px; color: var(--muted); font-size: 12px; }
 .header-spacer { flex: 1 1 auto; }
@@ -88,6 +92,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   height: 38px;
   min-height: 38px;
   border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
 }
 .mode-tabs button {
   position: relative;
@@ -124,7 +130,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   font-size: 14px;
   line-height: 22px;
 }
-.query-form label { font-weight: 650; }
+.query-form label { font-weight: 650; user-select: none; -webkit-user-select: none; }
 .query-form textarea { height: 84px; min-height: 64px; max-height: 160px; padding: 12px 14px; resize: none; line-height: 22px; }
 .target-card {
   display: flex;

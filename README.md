@@ -51,7 +51,7 @@ AP_CONNECTOR_TOKEN=*** npm start
 
 目录项目首次写入会在项目内创建目标子目录，默认位置是 `journals/YYYY_MM_DD.md`；单文件项目只允许追加到被选择的 `.md` / `.markdown` 文件。默认位置在来源可写且输入非空时立即生效，提交、显示与草稿恢复共用同一路径，用户也可显式修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
 
-> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳支持 Esc 隐藏和窗口置顶；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 注册 `Ctrl+Alt+P`，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
+> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳支持 Esc 隐藏、窗口置顶，并通过原生 `window.beginDrag` 从标题栏非交互区域移动；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 注册用户已配置的显示/隐藏快捷键（默认 `Ctrl+Alt+P`），可在托盘“设置…”中录入自定义组合键，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
 
 ## Windows P0 测试包
 
@@ -64,7 +64,7 @@ npm run desktop:web-package
 
 产物为 `dist/ActionPocket-windows-x64.zip`。包内已复制 Node 运行时、服务产物和 Web 资源；目标测试机不应再依赖预装 Node.js。`ActionPocket.exe` 不会在首次启动时强迫配置项目。托盘菜单只保留“显示 / 隐藏 / 设置… / 退出”；点“设置…”打开独立原生设置窗口（WinForms，与主浮窗分离）管理项目，配置原子持久化到 `%LOCALAPPDATA%\\ActionPocket\\projects.v1.json`，随后服务与小窗会受控重启并装配全部项目。旧 `graph-path.txt` 会迁移；`--graph-dir`、`--choose-graph` 与 `AP_GRAPH_DIR` 仍保留兼容。标准 HTTP Connector 继续通过环境变量接入。
 
-设置窗口可查看项目清单、添加文件夹、添加单个 `.md`/`.markdown`、把文件夹标记为普通 Markdown 或 Logseq、重命名项目、删除项目、设置默认项目，并保存或取消。文件与目录选择框都以设置窗为 owner，不会藏到主窗后面；修改先在设置窗暂存，点击“保存”后才原子写入配置并受控重启服务与小窗，取消不改变正在运行的配置，删除最后一个项目会二次确认。启动器源码按职责拆分（项目配置/设置窗、桌面窗口与 backdrop、launcher 生命周期、服务启动、自检），`native/build.ps1` 编译 `native/*.cs` 全部源文件。
+设置窗口可查看项目清单、添加文件夹、添加单个 `.md`/`.markdown`、把文件夹标记为普通 Markdown 或 Logseq、重命名项目、删除项目、设置默认项目，并直接按键录入全局显示/隐藏快捷键或恢复默认。快捷键必须是至少一个 Ctrl/Alt/Shift/Win 加字母、数字、F1–F24 或空格；冲突时明确提示并恢复旧快捷键。启动器偏好独立原子保存到 `%LOCALAPPDATA%\\ActionPocket\\launcher-settings.v1.json`，不会写进服务读取的项目配置。文件与目录选择框都以设置窗为 owner，不会藏到主窗后面；修改先在设置窗暂存，点击“保存”后才写入配置并受控重启服务与小窗，取消不改变正在运行的配置，删除最后一个项目会二次确认。启动器源码按职责拆分（项目配置、启动器偏好、设置窗、launcher 生命周期、服务启动、自检），`native/build.ps1` 编译 `native/*.cs` 全部源文件。
 
 构建与自动测试不能替代 Windows 热键、托盘、进程清理和启动耗时验收，执行步骤见 [`docs/P0-RELEASE-CHECKLIST.md`](docs/P0-RELEASE-CHECKLIST.md)。
 

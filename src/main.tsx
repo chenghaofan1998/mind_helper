@@ -1,6 +1,6 @@
 import "./styles.css";
 import { copyText } from "./clipboard";
-import { hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, toggleDesktopPin } from "./desktopRuntime";
+import { beginDesktopDrag, hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, toggleDesktopPin } from "./desktopRuntime";
 import { loadDraft, loadProjectDraft, saveDraft } from "./draftStore";
 import { focusRiskReturnTarget, focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import type { RiskReturnKind, RiskReturnTarget } from "./focusTrap";
@@ -11,6 +11,7 @@ import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, Search
 import { nextResultIndex, resultKeyboardAction } from "./resultNavigation";
 import { commandForClipboard, isDangerous, riskImpact } from "./search";
 import { canSubmitWrite, effectiveWritePath } from "./writeTarget";
+import { shouldBeginWindowDrag } from "./windowDrag";
 
 type Mode = "record" | "query";
 type RuntimeWindow = Window & {
@@ -182,9 +183,9 @@ function renderQueryState(): string {
 }
 
 function renderQueryInput(): string {
-  return `<form id="query-form" class="intent-form query-form">
+  return `<form id="query-form" class="intent-form query-form" autocomplete="off">
     <label for="query-input">现在遇到什么问题？</label>
-    <textarea id="query-input" rows="2" maxlength="500" required placeholder="例如：我以前怎么理解 Adam 的一阶矩？" ${busy ? "disabled" : ""}>${escapeHtml(query)}</textarea>
+    <textarea id="query-input" rows="2" maxlength="500" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="例如：我以前怎么理解 Adam 的一阶矩？" ${busy ? "disabled" : ""}>${escapeHtml(query)}</textarea>
   </form>`;
 }
 
@@ -411,6 +412,23 @@ function syncSubmitButtons(): void {
   const queryButton = root.querySelector<HTMLButtonElement>("#query-submit");
   if (queryButton) queryButton.disabled = loading || busy || !query.trim() || !activeSource()?.capabilities.includes("search");
 }
+
+root.addEventListener("pointerdown", (event) => {
+  if (!isDesktopRuntime()) return;
+  const target = event.target as HTMLElement;
+  const inHeader = Boolean(target.closest(".app-header"));
+  const inInteractiveControl = Boolean(target.closest("button, select, input, textarea, a"));
+  if (!shouldBeginWindowDrag(event.button, inHeader, inInteractiveControl)) return;
+  // Use Neutralino's native drag boundary instead of relying on Chromium-only app-region CSS.
+  // Preventing the browser gesture first also stops shell labels being selected and dropped into the query box.
+  event.preventDefault();
+  void beginDesktopDrag(event.screenX, event.screenY).catch((error) => showToast(`窗口移动失败：${String(error)}`));
+});
+
+root.addEventListener("dragstart", (event) => {
+  const target = event.target as HTMLElement;
+  if (target.closest(".app-header, .mode-tabs, .query-form > label")) event.preventDefault();
+});
 
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement | HTMLTextAreaElement;

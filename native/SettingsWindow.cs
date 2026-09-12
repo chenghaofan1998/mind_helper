@@ -1,13 +1,14 @@
 using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace ActionPocketLauncher
 {
     /// <summary>
     /// Independent WinForms settings window, separate from the Neutralino shell. Edits are staged in
-    /// memory and only reach disk when the user presses 保存; the launcher then atomically persists
-    /// projects.v1.json and restarts the service and shell. All file and folder pickers are owned by
+    /// memory and only reach disk when the user presses 保存; the launcher commits project and shortcut
+    /// files as one recoverable operation, then restarts the service and shell. All file and folder pickers are owned by
     /// this window so they never fall behind the desktop shell.
     /// </summary>
     internal sealed class ProjectSettingsWindow : Form
@@ -20,17 +21,23 @@ namespace ActionPocketLauncher
         private readonly Button defaultButton;
         private readonly Button deleteButton;
         private readonly Label statusLabel;
+        private readonly TextBox shortcutBox;
+        private HotkeyBinding hotkey;
         private bool updating;
 
-        public ProjectSettingsWindow(ProjectsDocument stagedDocument)
+        [DllImport("user32.dll")]
+        private static extern short GetKeyState(int virtualKey);
+
+        public ProjectSettingsWindow(ProjectsDocument stagedDocument, HotkeyBinding stagedHotkey)
         {
             document = stagedDocument ?? new ProjectsDocument();
+            hotkey = (stagedHotkey ?? HotkeyBinding.Default()).Copy();
             ProjectDocumentRules.Normalize(document);
 
             Text = "Action Pocket 设置";
             Font = SystemFonts.MessageBoxFont;
-            ClientSize = new Size(680, 480);
-            MinimumSize = new Size(696, 519);
+            ClientSize = new Size(680, 560);
+            MinimumSize = new Size(696, 599);
             StartPosition = FormStartPosition.CenterScreen;
             MinimizeBox = false;
             MaximizeBox = false;
@@ -39,7 +46,7 @@ namespace ActionPocketLauncher
             Label instructions = new Label();
             instructions.SetBounds(12, 12, 656, 46);
             instructions.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            instructions.Text = "管理项目与来源。修改先在本窗口暂存，点击“保存”后才原子写入 projects.v1.json 并重启服务与小窗；“取消”不改变正在运行的配置。标准 Connector 后续通过同一来源模型接入，本窗口暂不提供其配置表单。";
+            instructions.Text = "管理项目、来源与显示/隐藏快捷键。修改先在本窗口暂存，点击“保存”后才写入独立配置并重启服务与小窗；“取消”不改变正在运行的配置。标准 Connector 后续通过同一来源模型接入。";
 
             Button addFolder = new Button { Text = "添加文件夹…" };
             addFolder.SetBounds(12, 68, 132, 30);
@@ -52,7 +59,7 @@ namespace ActionPocketLauncher
             addFile.Click += delegate { AddMarkdownProject(); };
 
             projectList = new ListBox();
-            projectList.SetBounds(12, 110, 340, 300);
+            projectList.SetBounds(12, 110, 340, 380);
             projectList.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom;
             projectList.IntegralHeight = false;
             projectList.SelectedIndexChanged += delegate { ShowSelectedProject(); };
@@ -100,18 +107,45 @@ namespace ActionPocketLauncher
             deleteButton.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             deleteButton.Click += delegate { DeleteProject(); };
 
+            Label shortcutLabel = new Label { Text = "显示 / 隐藏快捷键" };
+            shortcutLabel.SetBounds(368, 356, 300, 18);
+            shortcutLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            shortcutBox = new TextBox();
+            shortcutBox.SetBounds(368, 378, 194, 26);
+            shortcutBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            shortcutBox.ReadOnly = true;
+            shortcutBox.ShortcutsEnabled = false;
+            shortcutBox.Text = HotkeyRules.Display(hotkey);
+            shortcutBox.KeyDown += CaptureShortcut;
+
+            Button resetShortcut = new Button { Text = "恢复默认" };
+            resetShortcut.SetBounds(572, 376, 96, 30);
+            resetShortcut.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            resetShortcut.Click += delegate
+            {
+                hotkey = HotkeyBinding.Default();
+                shortcutBox.Text = HotkeyRules.Display(hotkey);
+                ShowStatus("已暂存默认快捷键；点击“保存”后生效。");
+            };
+
+            Label shortcutHint = new Label { Text = "点击输入框后直接按组合键；必须包含 Ctrl、Alt、Shift 或 Win。" };
+            shortcutHint.SetBounds(368, 410, 300, 40);
+            shortcutHint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            shortcutHint.ForeColor = SystemColors.GrayText;
+
             statusLabel = new Label();
-            statusLabel.SetBounds(12, 418, 500, 20);
+            statusLabel.SetBounds(12, 498, 500, 20);
             statusLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             statusLabel.ForeColor = SystemColors.GrayText;
 
             Button saveButton = new Button { Text = "保存" };
-            saveButton.SetBounds(508, 440, 80, 30);
+            saveButton.SetBounds(508, 520, 80, 30);
             saveButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             saveButton.Click += delegate { SaveAndClose(); };
 
             Button cancelButton = new Button { Text = "取消", DialogResult = DialogResult.Cancel };
-            cancelButton.SetBounds(596, 440, 72, 30);
+            cancelButton.SetBounds(596, 520, 72, 30);
             cancelButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 
             CancelButton = cancelButton;
@@ -128,6 +162,10 @@ namespace ActionPocketLauncher
             Controls.Add(pathBox);
             Controls.Add(defaultButton);
             Controls.Add(deleteButton);
+            Controls.Add(shortcutLabel);
+            Controls.Add(shortcutBox);
+            Controls.Add(resetShortcut);
+            Controls.Add(shortcutHint);
             Controls.Add(statusLabel);
             Controls.Add(saveButton);
             Controls.Add(cancelButton);
@@ -137,6 +175,43 @@ namespace ActionPocketLauncher
         }
 
         public ProjectsDocument Document { get { return document; } }
+        public HotkeyBinding Hotkey { get { return hotkey.Copy(); } }
+
+        private static bool IsPressed(int virtualKey)
+        {
+            return (GetKeyState(virtualKey) & 0x8000) != 0;
+        }
+
+        private void CaptureShortcut(object sender, KeyEventArgs args)
+        {
+            args.SuppressKeyPress = true;
+            args.Handled = true;
+            Keys key = args.KeyCode;
+            if (key == Keys.ControlKey || key == Keys.ShiftKey || key == Keys.Menu || key == Keys.LWin || key == Keys.RWin)
+            {
+                ShowStatus("请继续按一个字母、数字、功能键或空格。");
+                return;
+            }
+            HotkeyBinding candidate = new HotkeyBinding
+            {
+                control = args.Control,
+                alt = args.Alt,
+                shift = args.Shift,
+                windows = IsPressed((int)Keys.LWin) || IsPressed((int)Keys.RWin),
+                key = (int)key
+            };
+            try
+            {
+                HotkeyRules.Validate(candidate);
+                hotkey = candidate;
+                shortcutBox.Text = HotkeyRules.Display(hotkey);
+                ShowStatus("已暂存快捷键 " + shortcutBox.Text + "；点击“保存”后生效。");
+            }
+            catch (InvalidOperationException error)
+            {
+                ShowStatus(error.Message);
+            }
+        }
 
         private ProjectEntry SelectedProject()
         {
@@ -317,6 +392,7 @@ namespace ActionPocketLauncher
             {
                 ProjectDocumentRules.Normalize(document);
                 ProjectDocumentRules.Validate(document);
+                HotkeyRules.Validate(hotkey);
             }
             catch (InvalidOperationException error)
             {

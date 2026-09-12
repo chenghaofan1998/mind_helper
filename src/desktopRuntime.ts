@@ -26,6 +26,11 @@ export async function toggleDesktopPin(): Promise<boolean> {
   return pinned;
 }
 
+export async function beginDesktopDrag(screenX: number, screenY: number): Promise<void> {
+  if (state !== "ready") return;
+  await neutralinoWindow.beginDrag(screenX, screenY);
+}
+
 export async function showDesktopWindow(): Promise<void> {
   if (state !== "ready") return;
   await neutralinoWindow.show();
@@ -40,7 +45,7 @@ export async function hideDesktopWindow(): Promise<void> {
       if (hideFailureReported) return;
       hideFailureReported = true;
       const detail = error instanceof Error ? error.message : String(error);
-      callbacks?.onError(`暂时无法隐藏窗口（${detail}），请使用托盘或 Ctrl+Alt+P。`);
+      callbacks?.onError(`暂时无法隐藏窗口（${detail}），请使用托盘重新显示。`);
     },
   );
 }

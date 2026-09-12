@@ -89,7 +89,34 @@ test("Windows settings window stages project edits and owns its pickers (source 
   // The tray "设置…" entry stages into a window and only restarts after a real save.
   assert.match(launcher, /menu\.Items\.Add\("设置…", null, delegate \{ OpenSettings\(\); \}\)/);
   assert.match(launcher, /GraphConfiguration\.EnsureCurrentConfigurationImported\(configuration\);\s+configuration\.GraphDirectory = null;\s+configuration\.ProjectsFile = GraphConfiguration\.ProjectsFile/);
-  assert.match(launcher, /window\.ShowDialog\(\) == DialogResult\.OK/);
+  assert.match(launcher, /window\.ShowDialog\(\) != DialogResult\.OK/);
+});
+
+test("Windows settings persist and safely rebind a customizable global shortcut (source contract)", async () => {
+  const launcher = await nativeSource();
+  const settings = await source("native/SettingsWindow.cs");
+  const preferences = await source("native/LauncherSettings.cs");
+  assert.match(preferences, /launcher-settings\.v1\.json/);
+  assert.doesNotMatch(preferences, /GraphConfiguration|ProjectsFile/);
+  assert.match(preferences, /File\.Replace\(temporary, SettingsFile, null\)/);
+  assert.match(preferences, /快捷键必须包含 Ctrl、Alt、Shift 或 Win/);
+  assert.match(preferences, /key >= Keys\.A && key <= Keys\.Z/);
+  assert.match(settings, /shortcutBox\.KeyDown \+= CaptureShortcut/);
+  assert.match(settings, /GetKeyState\(virtualKey\)/);
+  assert.match(settings, /恢复默认/);
+  assert.match(launcher, /bool hotkeyRegistered = hotkey\.Register\(launcherSettings\.hotkey\)/);
+  assert.match(launcher, /hotkeyRegistered\s+\? "关闭或最小化窗口后/);
+  assert.match(launcher, /快捷键当前未能注册。请双击托盘图标/);
+  assert.match(launcher, /hotkey\.Rebind\(stagedHotkey\)/);
+  assert.match(launcher, /HotkeyRebindResult\.CandidateUnavailable/);
+  assert.match(launcher, /旧快捷键 .* 已恢复/);
+  assert.match(launcher, /rollbackResult != HotkeyRebindResult\.Applied/);
+  assert.match(preferences, /SettingsPersistenceTransaction/);
+  assert.match(preferences, /ConfigurationFileSnapshot/);
+  assert.match(preferences, /restoreLauncherSettings\(\);[\s\S]*restoreProjects\(\);/);
+  assert.match(launcher, /SettingsPersistenceTransaction\.Commit/);
+  assert.match(launcher, /ConfigurationFileSnapshot\.Capture\(GraphConfiguration\.ProjectsFile\)/);
+  assert.match(launcher, /HotkeyRules\.Display\(launcherSettings\.hotkey\)/);
 });
 
 test("Windows launcher persists and assembles folder and single-Markdown projects (source contract)", async () => {
@@ -135,4 +162,5 @@ test("Windows package uses an isolated staging tree with one root executable", a
   assert.match(script, /Join-Path \$shellDir "ActionPocketShell\.exe"/);
   assert.match(script, /Join-Path \$stagingDir "ActionPocket\.exe"/);
   assert.match(script, /Compress-Archive -Path \(Join-Path \$stagingDir "\*"\)/);
+  assert.match(script, /configured shortcut \(default: Ctrl\+Alt\+P\)/);
 });

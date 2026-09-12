@@ -76,15 +76,26 @@ namespace ActionPocketLauncher
         }
     }
 
-    /// <summary>Registers the Ctrl+Alt+P global hotkey without any keyboard hook.</summary>
+    internal enum HotkeyRebindResult { Applied, CandidateUnavailable, RollbackFailed }
+
+    /// <summary>Pure failure policy used after a candidate registration fails.</summary>
+    internal static class HotkeyRebindPolicy
+    {
+        public static HotkeyRebindResult AfterCandidateFailure(HotkeyBinding previous, Func<HotkeyBinding, bool> restorePrevious)
+        {
+            if (previous == null) return HotkeyRebindResult.CandidateUnavailable;
+            return restorePrevious(previous) ? HotkeyRebindResult.CandidateUnavailable : HotkeyRebindResult.RollbackFailed;
+        }
+    }
+
+    /// <summary>Registers one validated global hotkey without installing a keyboard hook.</summary>
     internal sealed class HotkeyWindow : NativeWindow, IDisposable
     {
         private const int WmHotkey = 0x0312;
         private const int HotkeyId = 0x4150;
-        private const int ModAlt = 0x0001;
-        private const int ModControl = 0x0002;
         private readonly Action toggleShell;
         private bool registered;
+        private HotkeyBinding binding;
 
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr window, int id, int modifiers, uint key);
@@ -98,10 +109,29 @@ namespace ActionPocketLauncher
             CreateHandle(new CreateParams());
         }
 
-        public bool Register()
+        public HotkeyBinding Binding { get { return binding == null ? null : binding.Copy(); } }
+
+        public bool Register(HotkeyBinding candidate)
         {
-            registered = RegisterHotKey(Handle, HotkeyId, ModAlt | ModControl, 0x50);
+            HotkeyRules.Validate(candidate);
+            binding = candidate.Copy();
+            registered = RegisterHotKey(Handle, HotkeyId, HotkeyRules.Modifiers(candidate), (uint)candidate.key);
             return registered;
+        }
+
+        public HotkeyRebindResult Rebind(HotkeyBinding candidate)
+        {
+            HotkeyRules.Validate(candidate);
+            if (registered && HotkeyRules.Equals(binding, candidate)) return HotkeyRebindResult.Applied;
+            HotkeyBinding previous = binding == null ? null : binding.Copy();
+            if (registered)
+            {
+                UnregisterHotKey(Handle, HotkeyId);
+                registered = false;
+            }
+            if (Register(candidate)) return HotkeyRebindResult.Applied;
+            binding = previous;
+            return HotkeyRebindPolicy.AfterCandidateFailure(previous, Register);
         }
 
         protected override void WndProc(ref Message message)

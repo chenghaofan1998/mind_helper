@@ -26,7 +26,8 @@ namespace ActionPocketLauncher
         private readonly ShellRestartPolicy shellRestartPolicy;
         private int port;
         private Process service;
-        private readonly HotkeyWindow hotkey;
+        private HotkeyWindow hotkey;
+        private LauncherSettingsDocument launcherSettings;
         private readonly NotifyIcon tray;
         private readonly System.Windows.Forms.Timer monitor;
         private Process shell;
@@ -69,6 +70,7 @@ namespace ActionPocketLauncher
             configuration = launchConfiguration;
             shellStarter = startShell;
             shellRestartPolicy = new ShellRestartPolicy(MaximumAutomaticShellFailures);
+            launcherSettings = LauncherSettingsStore.Load();
             ServiceRuntime.RunningService runningService = ServiceRuntime.StartReadyService(root, configuration);
             port = runningService.Port;
             service = runningService.Process;
@@ -83,8 +85,9 @@ namespace ActionPocketLauncher
                 showRequested = true;
 
                 hotkey = new HotkeyWindow(ToggleShell);
-                if (!hotkey.Register())
-                    MessageBox.Show("Ctrl+Alt+P 注册失败，可能已被其他程序占用。仍可通过托盘显示 Action Pocket。", "Action Pocket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                bool hotkeyRegistered = hotkey.Register(launcherSettings.hotkey);
+                if (!hotkeyRegistered)
+                    MessageBox.Show(HotkeyRules.Display(launcherSettings.hotkey) + " 注册失败，可能已被其他程序占用。仍可通过托盘显示 Action Pocket。", "Action Pocket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
                 tray = new NotifyIcon();
                 tray.Icon = SystemIcons.Application;
@@ -95,7 +98,9 @@ namespace ActionPocketLauncher
                 if (FirstRunNotice.TryMarkShown())
                 {
                     tray.BalloonTipTitle = "Action Pocket 正在托盘运行";
-                    tray.BalloonTipText = "关闭或最小化窗口后，可双击托盘图标或按 Ctrl+Alt+P 再次显示。项目增删改在托盘“设置…”中完成。";
+                    tray.BalloonTipText = hotkeyRegistered
+                        ? "关闭或最小化窗口后，可双击托盘图标或按 " + HotkeyRules.Display(launcherSettings.hotkey) + " 再次显示。项目与快捷键在托盘“设置…”中管理。"
+                        : "快捷键当前未能注册。请双击托盘图标再次显示，并在托盘“设置…”中修改快捷键。";
                     tray.BalloonTipIcon = ToolTipIcon.Info;
                     tray.ShowBalloonTip(3000);
                 }
@@ -137,19 +142,57 @@ namespace ActionPocketLauncher
             try
             {
                 // Import any externally supplied configuration first so the window shows the
-                // effective project list, then stage edits against the local projects file.
+                // effective project list, then keep all edits staged until both validations pass.
                 GraphConfiguration.EnsureCurrentConfigurationImported(configuration);
                 configuration.GraphDirectory = null;
                 configuration.ProjectsFile = GraphConfiguration.ProjectsFile;
+                ProjectsDocument stagedProjects = GraphConfiguration.LoadProjects();
+                HotkeyBinding stagedHotkey = launcherSettings.hotkey.Copy();
 
-                bool saved;
-                using (ProjectSettingsWindow window = new ProjectSettingsWindow(GraphConfiguration.LoadProjects()))
+                while (true)
                 {
-                    saved = window.ShowDialog() == DialogResult.OK;
-                    if (saved) GraphConfiguration.SaveProjects(window.Document);
+                    using (ProjectSettingsWindow window = new ProjectSettingsWindow(stagedProjects, stagedHotkey))
+                    {
+                        if (window.ShowDialog() != DialogResult.OK) return;
+                        stagedProjects = window.Document;
+                        stagedHotkey = window.Hotkey;
+                    }
+
+                    HotkeyBinding previousHotkey = hotkey.Binding ?? launcherSettings.hotkey.Copy();
+                    HotkeyRebindResult result = hotkey.Rebind(stagedHotkey);
+                    if (result == HotkeyRebindResult.CandidateUnavailable)
+                    {
+                        MessageBox.Show(HotkeyRules.Display(stagedHotkey) + " 已被其他程序占用，旧快捷键 " + HotkeyRules.Display(previousHotkey) + " 已恢复。请重新选择。", "快捷键不可用", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        continue;
+                    }
+                    if (result == HotkeyRebindResult.RollbackFailed)
+                    {
+                        MessageBox.Show("新快捷键注册失败，且系统未能恢复旧快捷键。请通过托盘继续操作并重新打开设置。", "快捷键注册失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    LauncherSettingsDocument nextSettings = new LauncherSettingsDocument { hotkey = stagedHotkey.Copy() };
+                    try
+                    {
+                        ConfigurationFileSnapshot projectSnapshot = ConfigurationFileSnapshot.Capture(GraphConfiguration.ProjectsFile);
+                        ConfigurationFileSnapshot launcherSnapshot = ConfigurationFileSnapshot.Capture(LauncherSettingsStore.SettingsFile);
+                        SettingsPersistenceTransaction.Commit(
+                            delegate { GraphConfiguration.SaveProjects(stagedProjects); },
+                            delegate { LauncherSettingsStore.Save(nextSettings); },
+                            projectSnapshot.Restore,
+                            launcherSnapshot.Restore);
+                        launcherSettings = nextSettings;
+                    }
+                    catch (Exception persistenceError)
+                    {
+                        HotkeyRebindResult rollbackResult = hotkey.Rebind(previousHotkey);
+                        if (rollbackResult != HotkeyRebindResult.Applied)
+                            throw new InvalidOperationException(persistenceError.Message + " 运行中的旧快捷键也未能恢复；请使用托盘操作并重新启动应用。", persistenceError);
+                        throw;
+                    }
+                    RestartForConfiguration();
+                    return;
                 }
-                if (!saved) return;
-                RestartForConfiguration();
             }
             catch (Exception error)
             {
