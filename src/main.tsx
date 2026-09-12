@@ -1,21 +1,20 @@
 import "./styles.css";
 import { copyText } from "./clipboard";
 import { hideDesktopWindow, initializeDesktopRuntime, isDesktopRuntime, toggleDesktopPin } from "./desktopRuntime";
-import { clearDraft, loadDraft, saveDraft } from "./draftStore";
+import { loadDraft, loadProjectDraft, saveDraft } from "./draftStore";
 import { focusRiskReturnTarget, focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import type { RiskReturnKind, RiskReturnTarget } from "./focusTrap";
 import { applyExplicitMode, localRoute } from "./knowledge/intentRouter";
-import { listSources, searchKnowledge, writeKnowledge } from "./knowledge/client";
-import type { KnowledgeResult, KnowledgeSearchResults, SearchIntent, SourceDescriptor, SourceLocation, WriteReceipt } from "./knowledge/types";
-import { feedbackForLocation, loadPreferences, locationKey, savePreferences, setFeedback, togglePin } from "./preferenceStore";
+import { listProjects, listSources, locateKnowledge, searchKnowledge, writeKnowledge } from "./knowledge/client";
+import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, SearchIntent, SourceDescriptor, SourceLocation, WriteReceipt } from "./knowledge/types";
 import { nextResultIndex, resultKeyboardAction } from "./resultNavigation";
 import { commandForClipboard, isDangerous, riskImpact } from "./search";
+import { canSubmitWrite, effectiveWritePath } from "./writeTarget";
 
 type Mode = "record" | "query";
 type RuntimeWindow = Window & {
   Neutralino?: {
     clipboard?: { writeText(value: string): Promise<unknown> };
-    os?: { open(value: string): Promise<unknown> };
   };
 };
 
@@ -24,11 +23,13 @@ if (!rootElement) throw new Error("Missing #root element");
 const root: HTMLElement = rootElement;
 
 const draft = loadDraft();
-const preferences = loadPreferences();
 let mode: Mode = draft.rawContent ? "record" : "query";
+let projects: ProjectDescriptor[] = [];
 let sources: SourceDescriptor[] = [];
+let projectId = draft.projectId;
 let sourceId = draft.sourceId;
 let relativePath = draft.relativePath;
+let relativePathExplicit = draft.relativePathExplicit;
 let rawContent = draft.rawContent;
 let query = "";
 let searchIntent: SearchIntent = "find";
@@ -51,8 +52,17 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 }
 
+function activeProject(): ProjectDescriptor | undefined {
+  return projects.find((project) => project.id === projectId);
+}
+
 function activeSource(): SourceDescriptor | undefined {
-  return sources.find((source) => source.id === sourceId);
+  const project = activeProject();
+  return sources.find((source) => source.id === sourceId && project?.sourceIds.includes(source.id));
+}
+
+function effectiveTargetPath(): string {
+  return effectiveWritePath(relativePath, activeSource());
 }
 
 function locationLabel(location: SourceLocation): string {
@@ -64,18 +74,8 @@ function sourceVersion(location: SourceLocation): string {
   return location.version ? `来源版本 ${location.version}` : "来源未提供版本";
 }
 
-function sourceSearchMode(source?: SourceDescriptor): string {
-  if (!source) return "未配置知识源";
-  if (source.searchMode === "lexical-fallback") return "本地词法检索，未使用 RAG";
-  if (results.retrievalMode === "rag") return "标准 HTTP Connector · RAG 检索";
-  if (results.retrievalMode === "hybrid") return "标准 HTTP Connector · 混合检索";
-  if (results.retrievalMode === "keyword") return "标准 HTTP Connector · 关键词检索";
-  return source.searchDescription || "知识源原生检索";
-}
-
-function pinFor(location: SourceLocation) {
-  const key = locationKey(location);
-  return preferences.pins.find((pin) => locationKey(pin.location) === key);
+function sourceForResult(result: KnowledgeResult): SourceDescriptor | undefined {
+  return sources.find((source) => source.id === result.location.sourceId);
 }
 
 function renderTabs(): string {
@@ -85,8 +85,14 @@ function renderTabs(): string {
   </nav>`;
 }
 
+function renderProjectSwitcher(): string {
+  const options = projects.map((project) => `<option value="${escapeHtml(project.id)}" ${project.id === projectId ? "selected" : ""}>${escapeHtml(project.name)}</option>`).join("");
+  return `<div class="project-switcher"><label for="project-select">当前项目</label><select id="project-select" ${busy || !projects.length ? "disabled" : ""}>${options || '<option value="">尚未添加项目</option>'}</select><button type="button" data-action="settings" aria-label="添加项目">＋</button></div>`;
+}
+
 function renderSourceOptions(requireWrite = false): string {
-  return sources.filter((source) => !requireWrite || source.capabilities.includes("write"))
+  const allowed = new Set(activeProject()?.sourceIds ?? []);
+  return sources.filter((source) => allowed.has(source.id) && (!requireWrite || source.capabilities.includes("write")))
     .map((source) => `<option value="${escapeHtml(source.id)}" ${source.id === sourceId ? "selected" : ""}>${escapeHtml(source.name)}</option>`).join("");
 }
 
@@ -94,23 +100,24 @@ function renderTargetEditor(): string {
   if (!editingTarget) return "";
   return `<div class="target-editor">
     <label><span>知识源</span><select id="source-select" ${busy ? "disabled" : ""}>${renderSourceOptions(true)}</select></label>
-    <label><span>知识源内位置</span><input id="relative-path" value="${escapeHtml(relativePath)}" maxlength="240" required ${busy ? "disabled" : ""}></label>
+    <label><span>知识源内位置</span><input id="relative-path" value="${escapeHtml(effectiveTargetPath())}" maxlength="240" required ${busy ? "disabled" : ""}></label>
   </div>`;
 }
 
 function renderRecord(): string {
   const source = activeSource();
-  const canWrite = Boolean(source?.capabilities.includes("write") && rawContent.trim() && relativePath.trim());
+  const targetPath = effectiveTargetPath();
+  const canWrite = canSubmitWrite(rawContent, relativePath, source);
   return `<form id="record-form" class="intent-panel record-panel">
     <label class="sr-only" for="raw-content">原始内容</label>
     <textarea class="record-input" id="raw-content" maxlength="262144" required placeholder="输入或粘贴想保存的原始内容…" ${busy ? "disabled" : ""}>${escapeHtml(rawContent)}</textarea>
     <section class="target-card" aria-label="写入位置">
-      <span><strong>${escapeHtml(source?.name ?? "未配置知识源")}</strong> · ${escapeHtml(relativePath || "未设置写入位置")}</span>
+      <span><strong>${escapeHtml(activeProject()?.name ?? "未配置项目")}</strong> · ${escapeHtml(targetPath || "未设置写入位置")}</span>
       <button class="text-button" type="button" data-action="edit-target" ${busy ? "disabled" : ""}>${editingTarget ? "收起" : "更改"}</button>
     </section>
     ${renderTargetEditor()}
-    ${!loading && !errorMessage && sources.length === 0 ? `<div class="inline-state unconfigured"><b>i</b><span>尚未配置知识源。连接后即可保存；当前输入会保留。</span></div>` : ""}
-    ${!loading && !errorMessage && sources.length > 0 && !sources.some((item) => item.capabilities.includes("write")) ? `<div class="inline-state error" role="alert"><b>!</b><span>已连接的知识源不支持写入；当前输入会保留。</span></div>` : ""}
+    ${!loading && !errorMessage && projects.length === 0 ? `<div class="inline-state unconfigured"><b>i</b><span>尚未添加项目。当前输入会保留。</span><button type="button" data-action="settings">添加项目</button></div>` : ""}
+    ${!loading && !errorMessage && activeProject() && !activeProject()?.sourceIds.some((id) => sources.find((item) => item.id === id)?.capabilities.includes("write")) ? `<div class="inline-state error" role="alert"><b>!</b><span>当前项目不支持写入；当前输入会保留。</span></div>` : ""}
     ${errorMessage ? `<div class="inline-state error" role="alert"><b>!</b><span>${escapeHtml(errorMessage)}</span></div>` : ""}
     ${successReceipt?.ok ? `<section class="saved-confirmation" role="status">
       <header><b>✓ 刚刚保存的原文</b><span>${escapeHtml(locationLabel(successReceipt.location))}</span></header>
@@ -118,11 +125,6 @@ function renderRecord(): string {
     </section>` : ""}
     <div class="panel-actions"><button class="settings-button" type="button" data-action="settings">⚙ <span>设置</span></button><button class="primary" type="submit" ${busy || !canWrite ? "disabled" : ""}>${busy ? "正在保存…" : errorMessage ? "重试保存" : "保存到知识库"}<kbd>Ctrl+Enter</kbd></button></div>
   </form>`;
-}
-
-function renderPinnedReferences(): string {
-  if (!preferences.pins.length) return "";
-  return `<details class="pinned-references"><summary>已固定来源（${preferences.pins.length}）</summary>${preferences.pins.map((pin) => `<div><code>${escapeHtml(locationLabel(pin.location))}</code><button data-action="unpin" data-key="${escapeHtml(locationKey(pin.location))}">取消固定</button></div>`).join("")}</details>`;
 }
 
 function renderExcerpt(result: KnowledgeResult): string {
@@ -139,31 +141,26 @@ function resultKindLabel(result: KnowledgeResult): string {
 }
 
 function renderResult(result: KnowledgeResult, index: number): string {
-  const pinned = pinFor(result.location);
-  const stale = Boolean(pinned?.sourceVersion && pinned.sourceVersion !== result.location.version);
-  const feedback = feedbackForLocation(preferences, result.location);
+  const canLocate = sourceForResult(result)?.capabilities.includes("locate") ?? false;
   const dangerous = result.kind === "command" && isDangerous(commandForClipboard(result.excerpt));
   const selected = index === selectedResultIndex;
   return `<article class="result-card ${selected ? "selected" : ""}" data-result-index="${index}" data-id="${escapeHtml(result.id)}" data-risk-return="result-card" tabindex="${selected ? "0" : "-1"}" ${selected ? 'aria-current="true"' : ""}>
     <header class="result-heading"><div><span class="evidence-label">知识库原文</span><h2>${escapeHtml(result.title)}</h2></div><span class="result-kind">${resultKindLabel(result)}</span></header>
-    ${stale ? `<p class="stale">来源版本已变化；此固定引用不可视为最新正文。</p>` : ""}
     ${renderExcerpt(result)}
     ${result.contextBefore || result.contextAfter ? `<details class="context-details"><summary>展开必要上下文</summary>${result.contextBefore ? `<div><b>前文</b><p>${escapeHtml(result.contextBefore)}</p></div>` : ""}${result.contextAfter ? `<div><b>后文</b><p>${escapeHtml(result.contextAfter)}</p></div>` : ""}</details>` : ""}
     <p class="source-line">${escapeHtml(locationLabel(result.location))}<br><span>${escapeHtml(sourceVersion(result.location))}</span></p>
     ${dangerous ? `<p class="risk-note">${escapeHtml(riskImpact(commandForClipboard(result.excerpt)))}</p>` : ""}
     <footer class="result-actions">
       <button class="primary" data-action="copy" data-id="${escapeHtml(result.id)}" data-risk-return="copy-button">${result.kind === "command" ? "复制命令" : "复制原文"}${dangerous ? " · 需确认" : ""}</button>
-      <button data-action="locate" data-id="${escapeHtml(result.id)}">${result.location.uri ? "打开原文" : "复制定位"}</button>
-      <button class="${pinned ? "active" : ""}" data-action="pin" data-id="${escapeHtml(result.id)}">${pinned ? "已固定" : "固定"}</button>
-      <button class="${feedback?.value === "useful" ? "active" : ""}" data-action="useful" data-id="${escapeHtml(result.id)}">${feedback ? "已有用" : "有用"}</button>
+      <button data-action="${canLocate ? "locate" : "copy-location"}" data-id="${escapeHtml(result.id)}">${canLocate ? "打开原文" : "复制定位"}</button>
     </footer>
   </article>`;
 }
 
 function renderQueryState(): string {
   if (loading) return `<div class="query-state" role="status"><b>正在连接知识源…</b><span>连接完成前不会发送问题。</span></div>`;
-  if (!sources.length && !errorMessage) return `<div class="query-state"><b>尚未配置知识源</b><span>连接知识源后即可查询；这不是连接故障。</span><button data-action="settings">查看配置方式</button></div>`;
-  if (errorMessage) return `<div class="query-state error" role="alert"><b>知识源暂不可用</b><span>${escapeHtml(errorMessage)} 问题已保留。</span><button data-action="settings">打开设置</button></div>`;
+  if (!projects.length && !errorMessage) return `<div class="query-state"><b>尚未添加项目</b><span>添加文件夹或 Markdown 文件后即可查询。</span><button data-action="settings">添加项目</button></div>`;
+  if (errorMessage) return `<div class="query-state error" role="alert"><b>项目访问失败</b><span>${escapeHtml(errorMessage)} 问题已保留。</span><button data-action="settings">打开项目设置</button></div>`;
   if (busy) return `<div class="query-state" role="status"><b>正在查询知识源…</b><span>问题会保留到查询完成。</span></div>`;
   if (results.length) return `<div class="results" aria-label="查询结果">${results.map(renderResult).join("")}</div>`;
   if (hasSearched) return `<div class="query-state"><b>未找到相关原文</b><span>可修改问题后重试，或按知识源定位自行查找。</span></div>`;
@@ -179,8 +176,6 @@ function renderQuery(): string {
       <textarea id="query-input" rows="${hasSearched || busy ? 2 : 7}" maxlength="500" required placeholder="例如：我以前怎么理解 Adam 的一阶矩？" ${busy ? "disabled" : ""}>${escapeHtml(query)}</textarea>
     </form>
     ${renderQueryState()}
-    ${renderPinnedReferences()}
-    <div class="source-mode">${escapeHtml(source?.name ?? "未配置知识源")} · ${escapeHtml(sourceSearchMode(source))}</div>
     <div class="panel-actions"><button class="settings-button" type="button" data-action="settings">⚙ <span>设置</span></button><button class="primary" type="submit" form="query-form" ${loading || busy || !canSearch || !query.trim() ? "disabled" : ""}>${busy ? "查询中…" : errorMessage ? "重试查询" : "查询"}<kbd>Enter</kbd></button></div>
   </section>`;
 }
@@ -205,13 +200,29 @@ function render(): void {
   const source = activeSource();
   root.innerHTML = `<main class="pocket">
     <header class="app-header"><strong>AP</strong><span class="product-name">Action Pocket</span><span class="source-status ${source ? "ready" : ""}">${loading ? "连接中" : source?.name ?? "未配置"}</span>${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
-    ${renderTabs()}${mode === "record" ? renderRecord() : renderQuery()}
+    ${renderTabs()}${renderProjectSwitcher()}${mode === "record" ? renderRecord() : renderQuery()}
     <div class="toast-region" aria-live="polite"></div>${renderRiskModal()}
   </main>`;
 }
 
 function updateDraft(): void {
-  saveDraft({ rawContent, sourceId, relativePath });
+  saveDraft({
+    rawContent,
+    projectId,
+    sourceId,
+    relativePath: relativePathExplicit ? relativePath : "",
+    relativePathExplicit,
+  });
+}
+
+function restoreProjectDraft(nextProjectId: string): void {
+  const incoming = loadProjectDraft(nextProjectId);
+  projectId = nextProjectId;
+  rawContent = incoming.rawContent;
+  const project = activeProject();
+  sourceId = project?.sourceIds.includes(incoming.sourceId) ? incoming.sourceId : project?.defaultSourceId ?? "";
+  relativePath = incoming.relativePathExplicit ? incoming.relativePath : "";
+  relativePathExplicit = incoming.relativePathExplicit;
 }
 
 function showToast(message: string): void {
@@ -284,31 +295,56 @@ async function copyResult(result: KnowledgeResult, confirmed = false, returnKind
   }
 }
 
-async function locateResult(result: KnowledgeResult): Promise<void> {
-  const runtime = window as RuntimeWindow;
-  if (result.location.uri && runtime.Neutralino?.os?.open) {
-    try { await runtime.Neutralino.os.open(result.location.uri); return; } catch { /* fall back to a copied locator */ }
-  }
+function resultLocator(result: KnowledgeResult): string {
+  return `${activeProject()?.name ?? projectId} · ${result.location.sourceId} · ${locationLabel(result.location)} · ${sourceVersion(result.location)}`;
+}
+
+async function copyResultLocation(result: KnowledgeResult): Promise<void> {
   try {
-    await writeClipboard(`${result.location.sourceId} · ${locationLabel(result.location)} · ${sourceVersion(result.location)}`);
-    showToast(result.location.uri ? "无法打开原文，已复制定位" : "原文定位已复制");
+    await writeClipboard(resultLocator(result));
+    showToast("原文定位已复制");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "无法访问剪贴板，请重试。";
-    render();
-    showToast(`复制定位失败：${message}`);
+    showToast(`复制定位失败：${error instanceof Error ? error.message : "请重试"}`);
   }
 }
 
+async function locateResult(result: KnowledgeResult): Promise<void> {
+  try {
+    await locateKnowledge({ projectId, sourceId: result.location.sourceId, documentId: result.location.documentId });
+    showToast("已在文件管理器中定位原文");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "请复制定位后手动打开";
+    showToast(`打开原文失败：${message}`);
+  }
+}
+
+// A derived default such as today's journal is computed by the source at fetch time, so a long-lived
+// session must refresh it before writing instead of reusing the path fetched at startup.
+async function refreshSourceDefaults(): Promise<void> {
+  if (relativePathExplicit) return;
+  try {
+    const fresh = await listSources();
+    if (fresh.length) sources = fresh;
+  } catch { /* keep the descriptors already loaded */ }
+}
+
 async function submitRecord(): Promise<void> {
+  const source = activeSource();
+  if (!canSubmitWrite(rawContent, relativePath, source) || !projectId) return;
   const contentToSave = rawContent;
+  updateDraft();
   busy = true; errorMessage = ""; successReceipt = null; render();
   try {
-    const receipt = await writeKnowledge({ rawContent: contentToSave, target: { sourceId, relativePath } });
+    await refreshSourceDefaults();
+    const targetPath = effectiveTargetPath();
+    if (!targetPath) throw new Error("未设置写入位置。");
+    const receipt = await writeKnowledge({ rawContent: contentToSave, projectId, target: { sourceId, relativePath: targetPath } });
     if (!receipt.ok) throw new Error(receipt.message);
     successReceipt = receipt;
     lastSavedContent = contentToSave;
+    // Keep an explicit target so the next entry still lands where the user chose; only the body is cleared.
     rawContent = "";
-    clearDraft();
+    updateDraft();
   } catch (error) {
     errorMessage = error instanceof Error ? `写入失败：${error.message} 输入已保留。` : "写入失败，输入已保留。";
     updateDraft();
@@ -321,7 +357,8 @@ async function submitQuery(): Promise<void> {
   searchIntent = activeSource()?.searchMode === "source" ? explicitRoute.intent ?? "find" : "find";
   busy = true; errorMessage = ""; successReceipt = null; hasSearched = true; render();
   try {
-    results = await searchKnowledge({ query, sourceId, limit: 5, intent: searchIntent });
+    if (!query.trim() || !projectId || !activeSource()?.capabilities.includes("search")) return;
+    results = await searchKnowledge({ query, projectId, sourceId, limit: 5, intent: searchIntent });
     selectedResultIndex = 0;
   }
   catch (error) { results = []; errorMessage = error instanceof Error ? error.message : "查询失败。"; }
@@ -334,33 +371,51 @@ async function submitQuery(): Promise<void> {
 function selectMode(nextMode: Mode): void {
   mode = nextMode;
   const capability = mode === "record" ? "write" : "search";
-  if (!activeSource()?.capabilities.includes(capability)) sourceId = sources.find((source) => source.capabilities.includes(capability))?.id ?? "";
-  if (mode === "record" && !relativePath) relativePath = activeSource()?.defaultWritePath ?? "";
+  if (!activeSource()?.capabilities.includes(capability)) {
+    const allowed = new Set(activeProject()?.sourceIds ?? []);
+    sourceId = sources.find((source) => allowed.has(source.id) && source.capabilities.includes(capability))?.id ?? "";
+  }
   if (activeSource()) errorMessage = "";
   else if (!errorMessage && sources.length) errorMessage = `已连接的知识源不支持${mode === "record" ? "写入" : "检索"}。`;
   successReceipt = null; updateDraft(); render();
 }
 
+function syncSubmitButtons(): void {
+  const recordButton = root.querySelector<HTMLButtonElement>('#record-form button[type="submit"]');
+  if (recordButton) recordButton.disabled = busy || !canSubmitWrite(rawContent, relativePath, activeSource());
+  const queryButton = root.querySelector<HTMLButtonElement>('button[form="query-form"]');
+  if (queryButton) queryButton.disabled = loading || busy || !query.trim() || !activeSource()?.capabilities.includes("search");
+}
+
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement | HTMLTextAreaElement;
   if (input.id === "raw-content") { rawContent = input.value; updateDraft(); }
-  if (input.id === "relative-path") { relativePath = input.value; updateDraft(); }
+  if (input.id === "relative-path") { relativePath = input.value; relativePathExplicit = true; updateDraft(); }
   if (input.id === "query-input") query = input.value;
+  syncSubmitButtons();
 });
 
 root.addEventListener("change", (event) => {
   const input = event.target as HTMLSelectElement;
+  if (input.id === "project-select") {
+    updateDraft();
+    restoreProjectDraft(input.value);
+    results = []; hasSearched = false; selectedResultIndex = 0; errorMessage = "";
+    updateDraft(); render();
+    return;
+  }
   if (input.id !== "source-select") return;
   sourceId = input.value;
-  relativePath = activeSource()?.defaultWritePath ?? relativePath;
+  relativePath = "";
+  relativePathExplicit = false;
   updateDraft(); render();
 });
 
 root.addEventListener("submit", (event) => {
   event.preventDefault();
   if (busy) return;
-  if ((event.target as HTMLFormElement).id === "record-form") void submitRecord();
-  if ((event.target as HTMLFormElement).id === "query-form") void submitQuery();
+  if ((event.target as HTMLFormElement).id === "record-form" && canSubmitWrite(rawContent, relativePath, activeSource())) void submitRecord();
+  if ((event.target as HTMLFormElement).id === "query-form" && query.trim() && activeSource()?.capabilities.includes("search")) void submitQuery();
 });
 
 root.addEventListener("focusin", (event) => {
@@ -375,12 +430,10 @@ root.addEventListener("click", (event) => {
   const result = results.find((item) => item.id === button.dataset.id);
   if (action === "mode") selectMode(button.dataset.mode === "record" ? "record" : "query");
   else if (action === "edit-target") { editingTarget = !editingTarget; render(); }
-  else if (action === "settings") showToast(isDesktopRuntime() ? "如需更换知识源，请退出后使用 --choose-graph 启动" : "开发版通过 AP_GRAPH_DIR 配置知识源");
+  else if (action === "settings") showToast(isDesktopRuntime() ? "请从系统托盘选择“添加文件夹项目”或“添加 Markdown 项目”" : "请通过 AP_PROJECTS_FILE 或 AP_GRAPH_DIR 配置项目");
   else if (action === "toggle-window-pin") void toggleDesktopPin().catch((error) => showToast(`置顶切换失败：${String(error)}`));
-  else if (action === "pin" && result) { const value = togglePin(preferences, result.location); savePreferences(preferences); render(); showToast(value ? "已固定来源引用" : "已取消固定"); }
-  else if (action === "unpin") { const pin = preferences.pins.find((item) => locationKey(item.location) === button.dataset.key); if (pin) { togglePin(preferences, pin.location); savePreferences(preferences); render(); } }
-  else if (action === "useful" && result) { setFeedback(preferences, result.location, "useful"); savePreferences(preferences); render(); showToast("已记录为有用（仅保存来源引用）"); }
   else if (action === "locate" && result) void locateResult(result);
+  else if (action === "copy-location" && result) void copyResultLocation(result);
   else if (action === "copy" && result) void copyResult(result, false, "copy-button");
   else if (action === "confirm-copy" && result) void copyResult(result, true);
   else if (action === "close-risk") closeRiskModal();
@@ -397,7 +450,7 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
-  if (event.key === "Escape" && isDesktopRuntime()) { event.preventDefault(); void hideDesktopWindow(); return; }
+  if (event.key === "Escape" && isDesktopRuntime()) { void hideDesktopWindow(); return; }
   const target = event.target as HTMLElement;
   const resultAction = mode === "query" && results.length && target.closest(".results") ? resultKeyboardAction(event.key) : undefined;
   if (resultAction === "previous" || resultAction === "next") {
@@ -421,7 +474,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (mode === "record" && event.key === "Enter" && (event.ctrlKey || event.metaKey) && !busy) {
     const form = root.querySelector<HTMLFormElement>("#record-form");
-    if (activeSource()?.capabilities.includes("write") && form?.reportValidity()) { event.preventDefault(); void submitRecord(); }
+    if (canSubmitWrite(rawContent, relativePath, activeSource()) && form?.reportValidity()) { event.preventDefault(); void submitRecord(); }
   }
   if (mode === "query" && event.key === "Enter" && !event.shiftKey && !busy && document.activeElement?.id === "query-input") {
     const form = root.querySelector<HTMLFormElement>("#query-form");
@@ -432,14 +485,20 @@ document.addEventListener("keydown", (event) => {
 async function initialize(): Promise<void> {
   render();
   try {
-    sources = await listSources();
-    const selected = sources.find((source) => source.id === sourceId);
-    const requiredCapability = mode === "record" ? "write" : "search";
-    if (!selected?.capabilities.includes(requiredCapability)) {
-      sourceId = sources.find((source) => source.capabilities.includes(requiredCapability))?.id ?? "";
+    const [sourceList, projectList] = await Promise.all([listSources(), listProjects()]);
+    sources = sourceList;
+    projects = projectList.projects;
+    if (!projects.some((project) => project.id === projectId)) {
+      restoreProjectDraft(projectList.activeProjectId ?? projects[0]?.id ?? "");
     }
-    if (!relativePath) relativePath = activeSource()?.defaultWritePath ?? "";
-    if (!activeSource() && sources.length) errorMessage = `已连接的知识源不支持${mode === "record" ? "写入" : "检索"}。`;
+    const project = activeProject();
+    const requiredCapability = mode === "record" ? "write" : "search";
+    const selected = activeSource();
+    if (!selected?.capabilities.includes(requiredCapability)) {
+      sourceId = project?.sourceIds.map((id) => sources.find((source) => source.id === id)).find((source) => source?.capabilities.includes(requiredCapability))?.id ?? project?.defaultSourceId ?? "";
+    }
+    updateDraft();
+    if (!activeSource() && projects.length) errorMessage = `当前项目不支持${mode === "record" ? "写入" : "检索"}。`;
   } catch (error) { errorMessage = error instanceof Error ? error.message : "无法连接知识源。"; }
   finally { loading = false; render(); }
 }

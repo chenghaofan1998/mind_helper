@@ -37,6 +37,7 @@ const READ_CHUNK_BYTES = 64 * 1024;
 const OMITTED_DIRECTORIES = new Set([".git", ".cache", "node_modules"]);
 const writeQueues = new Map<string, Promise<void>>();
 
+export interface FileGraphScope { kind: "directory" | "file"; path: string; }
 interface TextBlock { text: string; line: number; title?: string; kind: KnowledgeResultKind; }
 interface IndexedDocument { path: string; version: string; bytes: number; blocks: TextBlock[]; }
 interface TraversalState { files: string[]; directories: number; entries: number; stopped: boolean; }
@@ -226,39 +227,61 @@ function transientPathError(error: unknown): boolean {
   return ["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "");
 }
 
+export function localDailyJournalPath(date: Date = new Date()): string {
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `journals/${year}_${month}_${day}.md`;
+}
+
 export class FileGraphSource implements KnowledgeSource {
   private root = "";
+  private singleFile = "";
+  private readonly scope: FileGraphScope;
 
   constructor(
-    private readonly graphDirectory: string,
+    scope: string | FileGraphScope,
     private readonly sourceId = "file-graph",
     private readonly sourceName = "本地 Markdown 知识源",
-  ) {}
+    private readonly projectId?: string,
+  ) {
+    this.scope = typeof scope === "string" ? { kind: "directory", path: scope } : scope;
+  }
 
   async initialize(): Promise<void> {
-    if (!this.graphDirectory || !isAbsolute(this.graphDirectory)) {
-      throw new KnowledgeSourceError("NOT_CONFIGURED", "AP_GRAPH_DIR 必须是显式绝对路径。");
-    }
+    if (!this.scope.path || !isAbsolute(this.scope.path)) throw new KnowledgeSourceError("NOT_CONFIGURED", "文件知识源必须使用显式绝对路径。");
     try {
-      const info = await stat(this.graphDirectory);
-      if (!info.isDirectory()) throw new KnowledgeSourceError("NOT_CONFIGURED", "AP_GRAPH_DIR 必须指向已存在的目录。");
-      this.root = await realpath(this.graphDirectory);
-      const directory = await opendir(this.root);
-      await directory.close();
+      const linkInfo = await lstat(this.scope.path);
+      if (linkInfo.isSymbolicLink()) throw new KnowledgeSourceError("NOT_CONFIGURED", "项目路径不能是符号链接。");
+      const canonical = await realpath(this.scope.path);
+      const info = await stat(canonical);
+      if (this.scope.kind === "file") {
+        if (!info.isFile() || ![".md", ".markdown"].includes(extname(canonical).toLowerCase())) {
+          throw new KnowledgeSourceError("NOT_CONFIGURED", "单文件项目只能使用已存在的 .md 或 .markdown 普通文件。");
+        }
+        this.root = dirname(canonical);
+        this.singleFile = canonical;
+      } else {
+        if (!info.isDirectory()) throw new KnowledgeSourceError("NOT_CONFIGURED", "目录项目必须指向已存在的目录。");
+        this.root = canonical;
+        const directory = await opendir(this.root);
+        await directory.close();
+      }
     } catch (error) {
       if (error instanceof KnowledgeSourceError) throw error;
-      throw new KnowledgeSourceError("NOT_CONFIGURED", "AP_GRAPH_DIR 必须指向可访问的已存在目录。");
+      throw new KnowledgeSourceError("NOT_CONFIGURED", "文件知识源必须指向可访问的已存在目录或 Markdown 文件。");
     }
   }
 
-  descriptor(): SourceDescriptor {
+  descriptor(now: Date = new Date()): SourceDescriptor {
     return {
       id: this.sourceId,
       name: this.sourceName,
+      ...(this.projectId ? { projectId: this.projectId } : {}),
       capabilities: ["read", "search", "write", "locate"],
       searchMode: "lexical-fallback",
       searchDescription: "本地文件标题与段落词法检索（未使用 embedding/rerank）",
-      defaultWritePath: `journals/${new Date().toISOString().slice(0, 10).replaceAll("-", "_")}.md`,
+      defaultWritePath: this.singleFile ? basename(this.singleFile) : localDailyJournalPath(now),
     };
   }
 
@@ -349,8 +372,8 @@ export class FileGraphSource implements KnowledgeSource {
     }
     throwIfAborted(signal);
     const cappedLimit = Math.max(1, Math.min(5, Math.floor(limit)));
-    const traversal: TraversalState = { files: [], directories: 1, entries: 0, stopped: false };
-    await this.markdownFiles(this.root, traversal, signal);
+    const traversal: TraversalState = { files: this.singleFile ? [this.singleFile] : [], directories: 1, entries: 0, stopped: false };
+    if (!this.singleFile) await this.markdownFiles(this.root, traversal, signal);
     traversal.files.sort();
     const documents: IndexedDocument[] = [];
     let totalBytes = 0;
@@ -382,15 +405,41 @@ export class FileGraphSource implements KnowledgeSource {
       const relativePath = validateRelativePath(input.target.relativePath);
       const target = resolve(this.root, ...relativePath.split("/"));
       if (!isInside(this.root, target)) throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "写入位置超出知识源目录。");
+      if (this.singleFile && (relativePath !== basename(this.singleFile) || target !== this.singleFile)) {
+        throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "单文件项目只能写入所选 Markdown 文件。");
+      }
       return await withWriteLock(target, () => this.appendVerified(target, relativePath, input.rawContent));
     } catch (error) {
       return { ok: false, ...publicError(error) };
     }
   }
 
+  async locate(documentId: string): Promise<{ absolutePath: string }> {
+    this.ensureInitialized();
+    const relativePath = validateRelativePath(documentId);
+    const candidate = resolve(this.root, ...relativePath.split("/"));
+    if (!isInside(this.root, candidate) || (this.singleFile && candidate !== this.singleFile)) {
+      throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "原文定位超出项目范围。");
+    }
+    try {
+      const linkInfo = await lstat(candidate);
+      if (linkInfo.isSymbolicLink()) throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "不能打开符号链接原文。");
+      const actual = await realpath(candidate);
+      const info = await stat(actual);
+      if (!info.isFile() || !isInside(this.root, actual) || (this.singleFile && actual !== this.singleFile)) {
+        throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "原文定位超出项目范围。");
+      }
+      return { absolutePath: actual };
+    } catch (error) {
+      if (error instanceof KnowledgeSourceError) throw error;
+      if (transientPathError(error)) throw new KnowledgeSourceError("NOT_FOUND", "原文文件已移动或删除。");
+      throw new KnowledgeSourceError("IO_ERROR", "无法验证原文文件。");
+    }
+  }
+
   private async appendVerified(target: string, relativePath: string, rawContent: string): Promise<WriteReceipt> {
     await verifyExistingAncestors(this.root, target);
-    await mkdir(dirname(target), { recursive: true });
+    if (!this.singleFile) await mkdir(dirname(target), { recursive: true });
     await verifyExistingAncestors(this.root, dirname(target));
     return withCrossProcessLock(target, () => this.appendWhileLocked(target, relativePath, rawContent));
   }

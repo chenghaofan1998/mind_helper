@@ -31,6 +31,7 @@ $outArg = "/out:$output"
   /reference:System.dll `
   /reference:System.Core.dll `
   /reference:System.Drawing.dll `
+  /reference:System.Web.Extensions.dll `
   /reference:System.Windows.Forms.dll `
   $source
 

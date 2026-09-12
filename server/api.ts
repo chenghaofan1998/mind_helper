@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
+import { execFile } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { SearchIntent, WriteInput } from "../src/knowledge/types.js";
+import type { LocateInput, SearchIntent, WriteInput } from "../src/knowledge/types.js";
 import { KnowledgeSourceError, publicError } from "./errors.js";
 import type { SourceRegistry } from "./sourceRegistry.js";
 
@@ -86,7 +87,23 @@ function assertJsonRequest(request: IncomingMessage): void {
   }
 }
 
-export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, sessionToken: string) {
+export async function revealLocalFile(absolutePath: string): Promise<void> {
+  if (process.platform !== "win32") throw new KnowledgeSourceError("CAPABILITY_UNAVAILABLE", "当前平台不支持从小窗定位本地文件，请复制定位后手动打开。");
+  await new Promise<void>((resolve, reject) => {
+    execFile("explorer.exe", [`/select,${absolutePath}`], { windowsHide: true }, (error) => error ? reject(new KnowledgeSourceError("IO_ERROR", "系统未能打开原文位置。")) : resolve());
+  });
+}
+
+export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, sessionToken: string, reveal: (absolutePath: string) => Promise<void> = revealLocalFile) {
+  const recentResultLocations = new Set<string>();
+  const recentResultOrder: string[] = [];
+  const rememberResult = (sourceId: string, documentId: string) => {
+    const key = `${sourceId}\0${documentId}`;
+    if (recentResultLocations.has(key)) return;
+    recentResultLocations.add(key);
+    recentResultOrder.push(key);
+    if (recentResultOrder.length > 1_000) recentResultLocations.delete(recentResultOrder.shift()!);
+  };
   return async (request: IncomingMessage, response: ServerResponse, next: Next): Promise<void> => {
     const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     if (!pathname.startsWith("/api/")) return next();
@@ -97,8 +114,12 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
         send(response, 200, { sources: registry.descriptors() });
         return;
       }
+      if (request.method === "GET" && pathname === "/api/projects") {
+        send(response, 200, { projects: registry.projectDescriptors(), activeProjectId: registry.activeProject() });
+        return;
+      }
       if (request.method !== "POST") throw new KnowledgeSourceError("NOT_FOUND", "API 路径不存在。");
-      if (pathname !== "/api/search" && pathname !== "/api/write") {
+      if (pathname !== "/api/search" && pathname !== "/api/write" && pathname !== "/api/locate") {
         throw new KnowledgeSourceError("NOT_FOUND", "API 路径不存在。");
       }
       assertJsonRequest(request);
@@ -110,16 +131,19 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
         if (Object.hasOwn(body, "sourceId") && typeof body.sourceId !== "string") {
           throw new KnowledgeSourceError("INVALID_INPUT", "sourceId 必须是字符串。");
         }
+        if (Object.hasOwn(body, "projectId") && typeof body.projectId !== "string") {
+          throw new KnowledgeSourceError("INVALID_INPUT", "projectId 必须是字符串。");
+        }
         if (Object.hasOwn(body, "limit") && (typeof body.limit !== "number" || !Number.isInteger(body.limit) || body.limit < 1 || body.limit > 5)) {
           throw new KnowledgeSourceError("INVALID_INPUT", "limit 必须是 1–5 的整数。");
         }
         if (Object.hasOwn(body, "intent") && (typeof body.intent !== "string" || !SEARCH_INTENTS.has(body.intent as SearchIntent))) {
           throw new KnowledgeSourceError("INVALID_INPUT", "intent 必须是 find、command、understanding、task 或 decision。");
         }
-        const sourceId = body.sourceId as string | undefined ?? registry.descriptors().find((source) => source.capabilities.includes("search"))?.id;
+        const projectId = body.projectId as string | undefined;
+        const sourceId = body.sourceId as string | undefined;
         const limit = body.limit as number | undefined ?? 5;
-        if (!sourceId) throw new KnowledgeSourceError("NOT_CONFIGURED", "尚未连接可检索的知识源。");
-        const source = registry.require(sourceId, "search");
+        const source = registry.requireForProject(projectId, sourceId, "search");
         const controller = new AbortController();
         const abort = () => controller.abort();
         const abortOnClose = () => { if (!response.writableEnded) abort(); };
@@ -127,6 +151,7 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
         response.once("close", abortOnClose);
         try {
           const results = await source.search(body.query, limit, controller.signal, body.intent as SearchIntent | undefined);
+          for (const result of results) rememberResult(result.location.sourceId, result.location.documentId);
           send(response, 200, {
             results,
             ...(results.requestId ? { requestId: results.requestId } : {}),
@@ -140,12 +165,26 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
       }
       if (pathname === "/api/write") {
         const input = body as unknown as WriteInput;
-        if (typeof input.rawContent !== "string" || !input.target || typeof input.target.sourceId !== "string" || typeof input.target.relativePath !== "string") {
-          throw new KnowledgeSourceError("INVALID_INPUT", "写入内容、知识源和相对路径均为必填项。");
+        if (typeof input.rawContent !== "string" || (input.projectId !== undefined && typeof input.projectId !== "string") || !input.target || typeof input.target.sourceId !== "string" || typeof input.target.relativePath !== "string") {
+          throw new KnowledgeSourceError("INVALID_INPUT", "写入内容、项目、知识源和相对路径字段无效。");
         }
-        const source = registry.require(input.target.sourceId, "write");
+        const source = registry.requireForProject(input.projectId, input.target.sourceId, "write");
         const receipt = await source.write!(input);
         send(response, receipt.ok ? 200 : errorStatus(receipt.code), receipt);
+        return;
+      }
+      if (pathname === "/api/locate") {
+        const input = body as unknown as LocateInput;
+        if (typeof input.projectId !== "string" || typeof input.sourceId !== "string" || typeof input.documentId !== "string" || !input.documentId || input.documentId.length > 240 || input.documentId.includes("\0") || /^[\\/]|^[a-z]:[\\/]/i.test(input.documentId)) {
+          throw new KnowledgeSourceError("INVALID_INPUT", "打开原文需要有效的项目、知识源和相对文档定位。");
+        }
+        const source = registry.requireForProject(input.projectId, input.sourceId, "locate");
+        if (!recentResultLocations.has(`${input.sourceId}\0${input.documentId}`)) {
+          throw new KnowledgeSourceError("NOT_FOUND", "该定位不是当前服务返回的检索结果，请重新查询。");
+        }
+        const located = await source.locate!(input.documentId);
+        await reveal(located.absolutePath);
+        send(response, 200, { ok: true });
         return;
       }
       throw new KnowledgeSourceError("NOT_FOUND", "API 路径不存在。");

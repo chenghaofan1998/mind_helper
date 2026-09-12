@@ -1,23 +1,23 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { KnowledgeErrorCode, KnowledgeSearchResults, KnowledgeSource } from "../src/knowledge/types.js";
 import { createApiMiddleware } from "./api.js";
 import { KnowledgeSourceError } from "./errors.js";
-import { SourceRegistry } from "./sourceRegistry.js";
+import { registryFromEnvironment, SourceRegistry } from "./sourceRegistry.js";
 import { FileGraphSource } from "./sources/fileGraph.js";
 
-async function apiServer(sourceOverride?: KnowledgeSource) {
+async function apiServer(sourceOverride?: KnowledgeSource, reveal: (path: string) => Promise<void> = async () => {}, registryOverride?: SourceRegistry) {
   const source = sourceOverride ?? new FileGraphSource(await mkdtemp(join(tmpdir(), "action-pocket-api-")));
   if (source instanceof FileGraphSource) await source.initialize();
-  const registry = new SourceRegistry();
-  registry.register(source);
+  const registry = registryOverride ?? new SourceRegistry();
+  if (!registryOverride) registry.register(source);
   const token = randomBytes(32).toString("base64url");
-  const middleware = createApiMiddleware(Promise.resolve(registry), token);
+  const middleware = createApiMiddleware(Promise.resolve(registry), token, reveal);
   const server = createServer((request, response) => {
     void middleware(request, response, () => { response.statusCode = 404; response.end(); });
   });
@@ -159,6 +159,66 @@ test("HTTP maps stable source failures and preserves connector search metadata",
   } finally {
     await server.close();
   }
+});
+
+test("HTTP project routing isolates search and rejects cross-project source injection", async () => {
+  const first = await mkdtemp(join(tmpdir(), "action-pocket-api-project-a-"));
+  const second = await mkdtemp(join(tmpdir(), "action-pocket-api-project-b-"));
+  await writeFile(join(first, "a.md"), "shared-project-query alpha-only");
+  await writeFile(join(second, "b.md"), "shared-project-query beta-only");
+  const config = {
+    version: 1,
+    projects: [
+      { id: "project-a", name: "A", defaultSourceId: "source-a", sources: [{ id: "source-a", kind: "markdown-files", scope: { kind: "directory", path: first } }] },
+      { id: "project-b", name: "B", defaultSourceId: "source-b", sources: [{ id: "source-b", kind: "markdown-files", scope: { kind: "directory", path: second } }] },
+    ],
+  };
+  const registry = await registryFromEnvironment({ AP_PROJECTS_JSON: JSON.stringify(config) });
+  const server = await apiServer(undefined, async () => {}, registry);
+  try {
+    const headers = { "content-type": "application/json", ...server.browserHeaders };
+    const search = async (body: object) => fetch(`${server.base}/api/search`, { method: "POST", headers, body: JSON.stringify({ query: "shared project query", ...body }) });
+    let response = await search({ projectId: "project-a", sourceId: "source-a" });
+    assert.equal((await response.json() as { results: Array<{ location: { path: string } }> }).results[0].location.path, "a.md");
+    response = await search({ projectId: "project-b", sourceId: "source-b" });
+    assert.equal((await response.json() as { results: Array<{ location: { path: string } }> }).results[0].location.path, "b.md");
+    response = await search({ projectId: "project-a", sourceId: "source-b" });
+    assert.equal(response.status, 404);
+    response = await search({});
+    assert.equal(response.status, 400);
+  } finally { await server.close(); }
+});
+
+test("HTTP locate opens only a source-validated result path without accepting absolute paths", async () => {
+  let revealed = "";
+  const server = await apiServer(undefined, async (path) => { revealed = path; });
+  try {
+    const headers = { "content-type": "application/json", ...server.browserHeaders };
+    await fetch(`${server.base}/api/write`, {
+      method: "POST", headers, body: JSON.stringify({ rawContent: "locate", target: { sourceId: "file-graph", relativePath: "safe.md" } }),
+    });
+    const projects = await (await fetch(`${server.base}/api/projects`, { headers: server.browserHeaders })).json() as { projects: Array<{ id: string }> };
+    await fetch(`${server.base}/api/write`, {
+      method: "POST", headers, body: JSON.stringify({ rawContent: "not-returned", target: { sourceId: "file-graph", relativePath: "other.md" } }),
+    });
+    await fetch(`${server.base}/api/search`, {
+      method: "POST", headers, body: JSON.stringify({ query: "locate", projectId: projects.projects[0].id, sourceId: "file-graph" }),
+    });
+    let response = await fetch(`${server.base}/api/locate`, {
+      method: "POST", headers, body: JSON.stringify({ projectId: projects.projects[0].id, sourceId: "file-graph", documentId: "safe.md" }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(revealed.endsWith("safe.md"), true);
+    response = await fetch(`${server.base}/api/locate`, {
+      method: "POST", headers, body: JSON.stringify({ projectId: projects.projects[0].id, sourceId: "file-graph", documentId: "other.md" }),
+    });
+    assert.equal(response.status, 404);
+    response = await fetch(`${server.base}/api/locate`, {
+      method: "POST", headers, body: JSON.stringify({ projectId: projects.projects[0].id, sourceId: "file-graph", documentId: "/tmp/unsafe.md" }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as { code: string }).code, "INVALID_INPUT");
+  } finally { await server.close(); }
 });
 
 test("HTTP write and bounded search complete the source round trip", async () => {

@@ -6,10 +6,12 @@ interface DesktopCallbacks {
   onError(message: string): void;
 }
 
-let nativeRuntime = false;
-let initialized = false;
+type BridgeState = "idle" | "connecting" | "ready" | "offline" | "failed";
+let state: BridgeState = "idle";
 let pinned = false;
 let callbacks: DesktopCallbacks | undefined;
+let hideFailureReported = false;
+let listenersRegistered = false;
 
 function hasNativeBridge(): boolean {
   const runtime = window as Window & { NL_PORT?: number | string; NL_TOKEN?: string };
@@ -17,7 +19,7 @@ function hasNativeBridge(): boolean {
 }
 
 export async function toggleDesktopPin(): Promise<boolean> {
-  if (!nativeRuntime) return false;
+  if (state !== "ready") return false;
   pinned = !pinned;
   await neutralinoWindow.setAlwaysOnTop(pinned);
   callbacks?.onPinnedChange(pinned);
@@ -25,51 +27,53 @@ export async function toggleDesktopPin(): Promise<boolean> {
 }
 
 export async function showDesktopWindow(): Promise<void> {
-  if (!nativeRuntime) return;
+  if (state !== "ready") return;
   await neutralinoWindow.show();
   await neutralinoWindow.focus();
 }
 
 export async function hideDesktopWindow(): Promise<void> {
-  if (!nativeRuntime) return;
-  const hidden = await attemptDesktopHide(
+  if (state !== "ready") return;
+  await attemptDesktopHide(
     () => neutralinoWindow.hide(),
     (error) => {
+      if (hideFailureReported) return;
+      hideFailureReported = true;
       const detail = error instanceof Error ? error.message : String(error);
-      callbacks?.onError(`Esc 隐藏失败：${detail}。请使用窗口 X、系统托盘或 Ctrl+Alt+P。`);
+      callbacks?.onError(`暂时无法隐藏窗口（${detail}），请使用托盘或 Ctrl+Alt+P。`);
     },
   );
-  if (!hidden) nativeRuntime = false;
 }
 
 export function isDesktopRuntime(): boolean {
-  return nativeRuntime;
+  return state === "ready";
 }
 
-function connectDesktopRuntime(nextCallbacks: DesktopCallbacks): boolean {
-  callbacks = nextCallbacks;
-  if (nativeRuntime) return true;
-  if (initialized || !hasNativeBridge()) return false;
-  initialized = true;
-  void events.on("ready", () => { nativeRuntime = true; });
-  void events.on("serverOffline", () => {
-    nativeRuntime = false;
-    callbacks?.onError("桌面桥接已断开；请使用窗口 X、系统托盘或 Ctrl+Alt+P。");
-  });
+async function registerBridgeListeners(): Promise<void> {
+  if (listenersRegistered) return;
+  listenersRegistered = true;
+  await Promise.all([
+    events.on("ready", () => {
+      state = "ready";
+      hideFailureReported = false;
+      callbacks?.onPinnedChange(pinned);
+    }),
+    events.on("serverOffline", () => { state = "offline"; }),
+  ]);
+}
+
+async function connectDesktopRuntime(): Promise<void> {
+  state = "connecting";
   try {
+    await registerBridgeListeners();
     init();
-  } catch (error) {
-    initialized = false;
-    const detail = error instanceof Error ? error.message : String(error);
-    nextCallbacks.onError(`桌面桥接连接失败：${detail}。请使用窗口 X、系统托盘或 Ctrl+Alt+P。`);
+  } catch {
+    state = "failed";
   }
-  return nativeRuntime;
 }
 
 export function initializeDesktopRuntime(nextCallbacks: DesktopCallbacks): void {
-  if (connectDesktopRuntime(nextCallbacks)) return;
-  window.setTimeout(() => {
-    if (!nativeRuntime) connectDesktopRuntime(nextCallbacks);
-    if (!nativeRuntime) nextCallbacks.onError("桌面桥接未就绪；请使用窗口 X、系统托盘或 Ctrl+Alt+P。" );
-  }, 250);
+  callbacks = nextCallbacks;
+  if (!hasNativeBridge() || state === "connecting" || state === "ready") return;
+  void connectDesktopRuntime();
 }

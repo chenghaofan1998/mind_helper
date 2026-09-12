@@ -22,7 +22,8 @@ AP_GRAPH_KIND=logseq-files
 
 - `AP_GRAPH_DIR` 必须是已经存在、可访问的绝对路径；程序不会替用户创建或猜测 graph。
 - `AP_GRAPH_KIND` 可省略，默认 `markdown-files`；仅接受 `markdown-files` 或 `logseq-files`。
-- 指定 `logseq-files` 后，UI 来源名显示为“Logseq 文件 Graph”。这只影响明确的连接身份，不改变通用领域接口。
+- 指定 `logseq-files` 后，UI 项目来源名显示为“Logseq 文件 Graph”。这只影响明确的连接身份，不改变通用领域接口。
+- 桌面多项目配置通过 `AP_PROJECTS_FILE` 装配；每个 Logseq 目录、普通 Markdown 目录或单 Markdown 文件是独立 `ProjectDescriptor` 作用域。请求必须携带当前 `projectId`，服务端验证 source 成员关系后才检索、写入或定位。
 - 密钥不适用于文件 graph，也不会写入前端存储。
 
 ### 数据流
@@ -33,7 +34,7 @@ UI → 本机 /api → SourceRegistry → FileGraphSource → pages/**/*.md / jo
 
 `FileGraphSource` 仍是厂商无关实现：
 
-- 递归检索 Markdown，保留语义块、邻接上下文、行号、文件 URI 和内容版本；
+- 目录作用域递归检索 Markdown；单文件作用域只允许被选择的 `.md/.markdown`，不会读取同目录兄弟文件；两者都保留语义块、邻接上下文、行号、文件 URI 和内容版本；
 - 忽略隐藏目录、符号链接与 `logseq/bak`，并限制文件数、目录数、块数和总读取量；
 - 逐字追加到用户明确选择的相对 Markdown 路径；`fsync` 并回读校验后才返回成功；
 - 写入失败返回稳定错误，UI 保留原始输入。
@@ -113,7 +114,7 @@ AP_INTENT_MODEL_TIMEOUT_MS=1000
 
 - 不新增 provider SDK、Agent、对话记忆、多模型竞速或 prompt 管理平台；
 - 不把文件型支持宣称为 Logseq DB 支持；
-- 不在 P0 UI 增加来源切换器、类型筛选器或示例问题卡；
+- 不增加检索类型筛选器或示例问题卡；当前项目切换器必须始终紧凑可见，知识源 provider 仍由项目注册表驱动而不写死在 UI；
 - 不自动执行命令，不因分类结果自动写入；
 - 不用模型生成内容冒充知识库原文。
 

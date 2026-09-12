@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { FILE_GRAPH_SEARCH_LIMITS, FileGraphSource, parseMarkdown } from "./fileGraph.js";
+import { FILE_GRAPH_SEARCH_LIMITS, FileGraphSource, localDailyJournalPath, parseMarkdown } from "./fileGraph.js";
 
 async function graph(): Promise<{ root: string; source: FileGraphSource }> {
   const root = await mkdtemp(join(tmpdir(), "action-pocket-"));
@@ -61,6 +61,15 @@ test("requires an existing, accessible, absolute Graph directory without creatin
   const file = join(parent, "not-a-directory");
   await writeFile(file, "x");
   await assert.rejects(new FileGraphSource(file).initialize(), /已存在的目录/);
+});
+
+test("daily default uses the local calendar and changes across local midnight", async () => {
+  const { source } = await graph();
+  const beforeMidnight = new Date(2025, 0, 31, 23, 59, 59);
+  const afterMidnight = new Date(2025, 1, 1, 0, 0, 1);
+  assert.equal(localDailyJournalPath(beforeMidnight), "journals/2025_01_31.md");
+  assert.equal(source.descriptor(beforeMidnight).defaultWritePath, "journals/2025_01_31.md");
+  assert.equal(source.descriptor(afterMidnight).defaultWritePath, "journals/2025_02_01.md");
 });
 
 test("search exposes finite directory, entry, candidate, block, per-file, and aggregate limits", () => {
@@ -428,4 +437,33 @@ test("search versions change when the source body changes", async () => {
   await writeFile(path, "freshness marker v2");
   const second = await source.search("freshness marker", 1);
   assert.notEqual(first[0].location.version, second[0].location.version);
+});
+
+test("single Markdown project never exposes or writes sibling files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "action-pocket-single-"));
+  const selected = join(root, "selected.md");
+  await writeFile(selected, "selected-only-alpha-token");
+  await writeFile(join(root, "sibling.md"), "sibling-secret-omega-token");
+  const source = new FileGraphSource({ kind: "file", path: selected }, "single");
+  await source.initialize();
+  assert.equal((await source.search("selected only alpha", 5)).length, 1);
+  assert.equal((await source.search("sibling secret omega", 5)).length, 0);
+  assert.equal((await source.locate("selected.md")).absolutePath, selected);
+  await assert.rejects(source.locate("sibling.md"), /项目范围/);
+  const rejected = await source.write({ rawContent: "no", target: { sourceId: "single", relativePath: "sibling.md" } });
+  assert.equal(rejected.ok, false);
+  const written = await source.write({ rawContent: "append", target: { sourceId: "single", relativePath: "selected.md" } });
+  assert.equal(written.ok, true);
+});
+
+test("single-file scope rejects non-Markdown files and symbolic links", async () => {
+  const root = await mkdtemp(join(tmpdir(), "action-pocket-single-invalid-"));
+  const text = join(root, "plain.txt");
+  const markdown = join(root, "real.md");
+  const linked = join(root, "linked.md");
+  await writeFile(text, "text");
+  await writeFile(markdown, "markdown");
+  await symlink(markdown, linked, "file");
+  await assert.rejects(new FileGraphSource({ kind: "file", path: text }).initialize(), /\.md/);
+  await assert.rejects(new FileGraphSource({ kind: "file", path: linked }).initialize(), /符号链接/);
 });

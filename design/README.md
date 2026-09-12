@@ -2,7 +2,7 @@
 
 > 状态：MVP 产品形态与连接器设计基线。实现仍以 `docs/ACTION-POCKET-CHARTER.md` 为最高约束。
 >
-> ⚠️ **`generated/` 里的 PNG 是蓝灰 token 更新前的历史探索素材，不是当前视觉或验收清单。** 当前颜色以本页 token、`gpt-image-2-prompts.json` 和重新生成的 `ui/*.svg` 为准；首版实际做什么，以 [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md) 为准。
+> ⚠️ **`generated/` 里的 PNG 是蓝灰 token 更新前的历史探索素材，不是当前视觉或验收清单。** 当前视觉以本页“视觉方向”、[`UI-GENERATION-BRIEF.md`](UI-GENERATION-BRIEF.md) 与实现测试为准；`gpt-image-2-prompts.json` 和 `ui/*.svg` 是本轮真实反馈前的生成/结构素材，不再约束系统标题框、固定/反馈或实色外壳。首版实际做什么，以 [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md) 为准。
 
 ## 结论
 
@@ -15,7 +15,7 @@ Action Pocket 是一个**小窗 + 后台**的知识行动入口：小窗负责�
 | `IMPLEMENTATION-NOTES.md` | **范围权威**：逐图「保留 / 简化 / 不做」注记与阶段验收 |
 | `generated/gpt-image-2/*.png` | P0 四个任务的 10 张旧色状态图，仅作历史探索，不属于当前视觉链 |
 | `ui/*.svg` | 8 张可编辑结构稿，用于约束布局，非最终视觉 |
-| `gpt-image-2-prompts.json` | P0 四个任务的 10 条主态/异常态提示词，输出使用 v2 文件名 |
+| `gpt-image-2-prompts.json` | P0 四个任务的 10 条历史生成提示词；真实反馈后的视觉与操作以本页和 UI Brief 为准 |
 | `generate-gpt-image-2.mjs` | 固定使用 `gpt-image-2` 的正式生图脚本 |
 | `UI-GENERATION-BRIEF.md` | 现有 10 图逐张纠偏、规划冲突口径、生图输入与验收标准 |
 | `PRODUCT-FLOWS.md` | 功能范围、状态与验收 |
@@ -39,8 +39,8 @@ OPENAI_API_KEY=*** npm run design:generate -- --only=01-quick-capture-v2-default
 ## 视觉方向
 
 - **气质**：安静、可信、克制，不做聊天机器人，也不做复杂知识库后台。
-- **权威设计 token**：深石板壳 `#1F2937`；可访问蓝主色 `#2563EB`；浅蓝强调 `#60A5FA`；浅灰底 `#EEF1F5`；内容面 `#F8FAFC`；正文 `#172033`；次正文 `#526071`；危险色 `#C54B43`。
-- **表面**：深石板背景 + 中性浅灰内容卡，突出原文而非装饰；成功/焦点沿用蓝色，不使用绿色阴影或状态。
+- **权威设计 token**：可访问蓝主色 `#2563EB`；浅蓝强调 `#60A5FA`；正文 `#172033`；次正文 `#526071`；危险色 `#C54B43`。外壳与内容面使用这些颜色的半透明版本，不以不透明整块壳覆盖系统材质。
+- **表面**：Today AI 仅作为安静轻量的毛玻璃气质参考，不声称像素复刻。Windows 11 由 launcher 优先应用 Mica，失败或 Windows 10 使用 Acrylic；透明无边框 Neutralino 内叠半透明浅色内容层、细边框、柔阴影与适量 `backdrop-filter`，无系统最小化/最大化/关闭框。无 blur 与高对比模式有可读 fallback。
 - **尺寸**：小窗设计基准 560×680；后台设计基准 1280×820。
 - **信息层级**：当前意图 > 原文结果 > 来源定位 > 派生说明 > 次要操作。
 
@@ -50,7 +50,7 @@ OPENAI_API_KEY=*** npm run design:generate -- --only=01-quick-capture-v2-default
 
 **P1（第二闭环）**：一次性截图 → 选区 → 预览 → 分析 → 联合查询。
 
-**P2（需真实数据支撑）**：遮挡编辑、多来源切换、Derived 渲染、负反馈。
+**P2（需真实数据支撑）**：遮挡编辑、Derived 渲染、负反馈。项目切换已因真实反馈纳入 P0：始终显示紧凑当前项目选择器，但不加入 provider 专属装饰。
 
 **本轮不做**：观察会话、架构图页面、能力矩阵、凭据管理 UI、多模型路由。
 

@@ -3,10 +3,18 @@ export type Capability = "read" | "search" | "write" | "locate" | "status";
 export interface SourceDescriptor {
   id: string;
   name: string;
+  projectId?: string;
   capabilities: Capability[];
   searchMode: "source" | "lexical-fallback";
   searchDescription: string;
   defaultWritePath?: string;
+}
+
+export interface ProjectDescriptor {
+  id: string;
+  name: string;
+  sourceIds: string[];
+  defaultSourceId: string;
 }
 
 export interface SourceLocation {
@@ -43,6 +51,7 @@ export interface KnowledgeSearchResults extends Array<KnowledgeResult> {
 
 export interface SearchInput {
   query: string;
+  projectId?: string;
   sourceId?: string;
   limit?: number;
   intent?: SearchIntent;
@@ -50,6 +59,7 @@ export interface SearchInput {
 
 export interface WriteInput {
   rawContent: string;
+  projectId?: string;
   target: {
     sourceId: string;
     relativePath: string;
@@ -98,13 +108,25 @@ export interface UsefulFeedback {
   at: string;
 }
 
+export interface LocatedDocument {
+  absolutePath: string;
+}
+
+export interface LocateInput {
+  projectId: string;
+  sourceId: string;
+  documentId: string;
+}
+
 export interface KnowledgeSource {
   descriptor(): SourceDescriptor;
   search(query: string, limit: number, signal?: AbortSignal, intent?: SearchIntent): Promise<KnowledgeSearchResults>;
   write?(input: WriteInput): Promise<WriteReceipt>;
+  locate?(documentId: string): Promise<LocatedDocument>;
 }
 
 export interface SourcesResponse { sources: SourceDescriptor[]; }
+export interface ProjectsResponse { projects: ProjectDescriptor[]; activeProjectId?: string; }
 export interface SearchResponse {
   results: KnowledgeResult[];
   requestId?: string;

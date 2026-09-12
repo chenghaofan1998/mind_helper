@@ -1,6 +1,9 @@
 import type {
   KnowledgeErrorCode,
   KnowledgeSearchResults,
+  LocateInput,
+  ProjectDescriptor,
+  ProjectsResponse,
   SearchInput,
   SearchResponse,
   SourceDescriptor,
@@ -66,6 +69,14 @@ async function requestJson<T>(
 
 export async function listSources(): Promise<SourceDescriptor[]> {
   return (await requestJson<SourcesResponse>("/api/sources")).sources;
+}
+
+export async function listProjects(): Promise<{ projects: ProjectDescriptor[]; activeProjectId?: string }> {
+  return requestJson<ProjectsResponse>("/api/projects");
+}
+
+export async function locateKnowledge(input: LocateInput): Promise<void> {
+  await requestJson<{ ok: true }>("/api/locate", { method: "POST", body: JSON.stringify(input) });
 }
 
 export async function searchKnowledge(input: SearchInput): Promise<KnowledgeSearchResults> {

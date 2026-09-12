@@ -5,47 +5,39 @@ import test from "node:test";
 
 const source = (path: string) => readFile(join(process.cwd(), path), "utf8");
 
-test("P0 styles use the approved non-green tokens and window geometry", async () => {
+test("desktop shell uses a restrained accessible glass surface", async () => {
   const css = await source("src/styles.css");
-  for (const declaration of [
-    "--shell: #1f2937", "--primary: #2563eb", "--surface: #f8fafc",
-    "--text: #172033", "--muted: #526071", "--danger: #c54b43", "--accent: #60a5fa",
-    "width: min(560px", "height: min(680px", "height: 40px", "min-height: 56px", "padding: 16px",
-  ]) assert.ok(css.includes(declaration), `missing UI contract declaration: ${declaration}`);
-  assert.doesNotMatch(css, /#183a32|#276b5d|#43b69b|rgba\((?:24, 58, 50|67, 182, 155|39, 107, 93)/i);
-  assert.doesNotMatch(css, /gradient|backdrop-filter/);
+  assert.match(css, /backdrop-filter: blur\(24px\) saturate\(135%\)/);
+  assert.match(css, /background: transparent/);
+  assert.match(css, /-webkit-app-region: drag/);
+  assert.match(css, /@supports not \(backdrop-filter/);
+  assert.match(css, /prefers-contrast: more/);
+  assert.doesNotMatch(css, /#183a32|#276b5d|#43b69b/i);
 
-  const index = await source("index.html");
-  assert.match(index, /name="theme-color" content="#1f2937"/);
-
-  const prompts = await source("design/gpt-image-2-prompts.json");
-  const generator = await source("design/generate-ui-mocks.mjs");
-  for (const authority of [prompts, generator]) {
-    assert.match(authority, /#1F2937/);
-    assert.match(authority, /#2563EB/);
-    assert.doesNotMatch(authority, /#183a32|#276b5d|#43b69b/i);
-  }
-  assert.doesNotMatch(generator, /\bgreen\b|\bmint\b/i);
-
-  for (const path of [
-    "design/ui/01-quick-capture.svg", "design/ui/02-rag-search.svg",
-    "design/ui/03-rag-results.svg", "design/ui/04-command-risk.svg",
-    "design/ui/05-backstage-connectors.svg", "design/ui/06-hotkey-lifecycle.svg",
-    "design/ui/07-monitoring-consent.svg", "design/ui/08-input-output-architecture.svg",
-  ]) assert.doesNotMatch(await source(path), /#183a32|#276b5d|#43b69b/i, `stale green token in ${path}`);
+  const config = JSON.parse(await source("neutralino.config.json")) as { modes: { window: { borderless: boolean; transparent: boolean } } };
+  assert.equal(config.modes.window.borderless, true);
+  assert.equal(config.modes.window.transparent, true);
 });
 
-test("P0 query remains one question box without chips, examples, or source selector", async () => {
+test("query keeps one question box, an always-visible project switcher, and no obstructing mode or pin UI", async () => {
   const main = await source("src/main.tsx");
   assert.equal((main.match(/id="query-input"/g) ?? []).length, 1);
-  assert.doesNotMatch(main, /SEARCH_OPTIONS|search-intent|query-example|query-source-select/);
+  assert.match(main, /id="project-select"/);
+  assert.match(main, /当前项目/);
+  assert.match(main, /projectId, sourceId/);
+  assert.doesNotMatch(main, /source-mode|renderPinnedReferences|data-action="pin"|data-action="useful"/);
   assert.match(main, /resultKeyboardAction/);
-  assert.match(main, /focusRiskModal/);
-  assert.match(main, /输入已保留/);
-  assert.match(main, /results\.retrievalMode === "rag"/);
-  assert.match(main, /RAG 检索/);
-  assert.match(main, /尚未配置知识源/);
-  assert.match(main, /这不是连接故障/);
+  assert.match(main, /尚未添加项目/);
+  assert.doesNotMatch(main, /知识源暂不可用/);
+  assert.match(main, /input\.id === "raw-content"[\s\S]*?syncSubmitButtons\(\)/);
+  assert.match(main, /canSubmitWrite\(rawContent, relativePath, activeSource\(\)\)/);
+});
+
+test("toast is positioned above the action bar at the 440 by 560 minimum layout", async () => {
+  const css = await source("src/styles.css");
+  assert.match(css, /\.panel-actions \{[\s\S]*?min-height: 56px/);
+  assert.match(css, /\.toast-region \{[^}]*bottom: 84px/);
+  assert.match(css, /\.toast-region \{[^}]*max-width: calc\(100% - 32px\)/);
 });
 
 test("danger modal preserves distinct keyboard-card and clicked-button return targets", async () => {
