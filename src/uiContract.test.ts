@@ -12,6 +12,7 @@ test("desktop shell renders a clear white glass surface in a transparent borderl
   assert.doesNotMatch(css, /-webkit-app-region:/);
   assert.match(css, /border-radius: 26px/);
   assert.match(css, /--glass: rgba\(255, 255, 255, \.84\)/);
+  assert.doesNotMatch(css, /box-shadow:\s*0 26px 60px/);
   assert.match(css, /@supports not \(backdrop-filter/);
   assert.match(css, /prefers-contrast: more/);
   // The dark app-header bar was the main reason the shell did not read as the white Today AI glass.
@@ -21,6 +22,20 @@ test("desktop shell renders a clear white glass surface in a transparent borderl
   const config = JSON.parse(await source("neutralino.config.json")) as { modes: { window: { borderless: boolean; transparent: boolean } } };
   assert.equal(config.modes.window.borderless, true);
   assert.equal(config.modes.window.transparent, true);
+});
+
+test("primary navigation and knowledge actions use one accessible inline icon system", async () => {
+  const main = await source("src/main.tsx");
+  const icons = await source("src/icons.ts");
+  const css = await source("src/styles.css");
+  assert.match(main, /<span class="app-mark"><img src="\.\/action-pocket\.png" alt="">/);
+  for (const name of ["record", "search", "save", "copy", "open", "edit", "file", "folder"]) {
+    assert.match(icons, new RegExp(`${name}:`));
+  }
+  assert.match(icons, /aria-hidden="true"/);
+  assert.match(main, /icon\("save"\)/);
+  assert.match(main, /icon\(canLocate \? "open" : "copy"\)/);
+  assert.match(css, /\.icon \{[^}]*stroke: currentColor/);
 });
 
 test("main window keeps a fixed top input row, one scrolling body and a fixed action bar (source contract)", async () => {
@@ -90,10 +105,34 @@ test("main window only switches configured projects and defers configuration to 
   assert.match(main, /canSubmitWrite\(rawContent, relativePath, activeSource\(\)\)/);
 });
 
+test("long project names and write paths adapt without covering header controls", async () => {
+  const main = await source("src/main.tsx");
+  const css = await source("src/styles.css");
+  assert.match(main, /id="project-select" title="\$\{escapeHtml\(selectedName\)\}"/);
+  assert.match(main, /class="target-summary" title="\$\{escapeHtml\(targetSummary\)\}"/);
+  assert.match(css, /\.project-switcher select \{[^}]*width: 100%;[^}]*max-width: 100%/);
+  assert.match(css, /\.target-card > span \{[^}]*overflow-wrap: anywhere;[^}]*white-space: normal/);
+  assert.match(css, /@media \(max-width: 470px\) \{[\s\S]*?\.header-spacer[\s\S]*?display: none;[\s\S]*?\.app-header \.project-switcher \{[^}]*width: 0;[^}]*flex: 1 1 0/);
+});
+
 test("unconfigured search points at the tray settings window without a dead button", async () => {
   const main = await source("src/main.tsx");
   assert.match(main, /projects\.length === 0 \? `<div class="inline-state unconfigured">/);
   assert.match(main, /!projects\.length && !errorMessage\) return `<div class="query-state" role="note"><span>\$\{escapeHtml\(TRAY_SETTINGS_HINT\)\}/);
+});
+
+test("query results render sanitized Markdown and embedded HTML", async () => {
+  const main = await source("src/main.tsx");
+  const renderer = await source("src/richText.ts");
+  const css = await source("src/styles.css");
+  assert.match(main, /renderRichText\(result\.excerpt\)/);
+  assert.match(main, /renderRichText\(result\.contextBefore\)/);
+  assert.match(renderer, /DOMPurify\.sanitize/);
+  assert.match(renderer, /marked\.parse/);
+  assert.match(renderer, /FORBID_TAGS: \["style", "img", "svg"/);
+  assert.match(renderer, /noopener noreferrer/);
+  assert.match(css, /\.markdown-body table/);
+  assert.match(css, /\.markdown-body pre code/);
 });
 
 test("result card copy and open actions share one stable grid and stack on narrow windows (source contract)", async () => {

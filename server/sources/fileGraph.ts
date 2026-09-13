@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { open, lstat, mkdir, opendir, realpath, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   KnowledgeResult,
@@ -15,6 +15,7 @@ import type {
   WriteReceipt,
 } from "../../src/knowledge/types.js";
 import { KnowledgeSourceError, publicError } from "../errors.js";
+import { fileIdentityMatches, isInside, isSearchableFile, OMITTED_DIRECTORIES, validateDocumentPath, validateWritePath } from "./fileGraphPaths.js";
 import { withCrossProcessLock } from "./fileLock.js";
 
 const MAX_WRITE_BYTES = 256 * 1024;
@@ -34,7 +35,6 @@ const MAX_DIRECTORIES = FILE_GRAPH_SEARCH_LIMITS.maximumDirectories;
 const MAX_DIRECTORY_ENTRIES = FILE_GRAPH_SEARCH_LIMITS.maximumDirectoryEntries;
 const MAX_BLOCKS = FILE_GRAPH_SEARCH_LIMITS.maximumBlocks;
 const READ_CHUNK_BYTES = 64 * 1024;
-const OMITTED_DIRECTORIES = new Set([".git", ".cache", "node_modules"]);
 const writeQueues = new Map<string, Promise<void>>();
 
 export interface FileGraphScope { kind: "directory" | "file"; path: string; }
@@ -44,26 +44,6 @@ interface TraversalState { files: string[]; directories: number; entries: number
 
 function hash(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function isInside(root: string, candidate: string): boolean {
-  const fromRoot = relative(root, candidate);
-  return fromRoot === "" || (!fromRoot.startsWith(`..${sep}`) && fromRoot !== ".." && !isAbsolute(fromRoot));
-}
-
-function validateRelativePath(value: string): string {
-  const path = value.trim().replaceAll("\\", "/");
-  if (!path || path.length > 240 || path.startsWith("/") || /^[a-z]:/i.test(path)) {
-    throw new KnowledgeSourceError("INVALID_INPUT", "写入位置必须是知识源内的相对 Markdown 路径。");
-  }
-  const parts = path.split("/");
-  if (parts.some((part) => !part || part === "." || part === ".." || part.includes("\0"))) {
-    throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "写入位置不能包含空段、. 或 ..。");
-  }
-  if (![".md", ".markdown"].includes(extname(path).toLowerCase())) {
-    throw new KnowledgeSourceError("INVALID_INPUT", "首个文件型知识源只写入 .md 或 .markdown 文件。");
-  }
-  return parts.join("/");
 }
 
 function lineKind(text: string): KnowledgeResultKind {
@@ -227,6 +207,10 @@ function transientPathError(error: unknown): boolean {
   return ["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "");
 }
 
+function skippableTraversalError(error: unknown): boolean {
+  return transientPathError(error) || ["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "");
+}
+
 export function localDailyJournalPath(date: Date = new Date()): string {
   const year = String(date.getFullYear()).padStart(4, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -280,7 +264,7 @@ export class FileGraphSource implements KnowledgeSource {
       ...(this.projectId ? { projectId: this.projectId } : {}),
       capabilities: ["read", "search", "write", "locate"],
       searchMode: "lexical-fallback",
-      searchDescription: "本地文件标题与段落词法检索（未使用 embedding/rerank）",
+      searchDescription: "本地 Markdown、代码与配置文件词法检索（未使用 embedding/rerank）",
       defaultWritePath: this.singleFile ? basename(this.singleFile) : localDailyJournalPath(now),
     };
   }
@@ -289,14 +273,14 @@ export class FileGraphSource implements KnowledgeSource {
     if (!this.root) throw new KnowledgeSourceError("NOT_CONFIGURED", "文件知识源尚未初始化。");
   }
 
-  private async markdownFiles(directory: string, state: TraversalState, signal?: AbortSignal): Promise<void> {
+  private async searchableFiles(directory: string, state: TraversalState, signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal);
     if (state.stopped || state.files.length >= MAX_FILES) return;
     let entries;
     try {
       entries = await opendir(directory);
     } catch (error) {
-      if (transientPathError(error)) return;
+      if (skippableTraversalError(error)) return;
       throw error;
     }
     for await (const entry of entries) {
@@ -316,8 +300,8 @@ export class FileGraphSource implements KnowledgeSource {
           break;
         }
         state.directories += 1;
-        await this.markdownFiles(fullPath, state, signal);
-      } else if (entry.isFile() && [".md", ".markdown"].includes(extname(entry.name).toLowerCase())) {
+        await this.searchableFiles(fullPath, state, signal);
+      } else if (entry.isFile() && isSearchableFile(entry.name)) {
         state.files.push(fullPath);
       }
       if (state.stopped || state.files.length >= MAX_FILES) break;
@@ -337,7 +321,7 @@ export class FileGraphSource implements KnowledgeSource {
         const actual = await realpath(file);
         if (!isInside(this.root, actual)) return undefined;
         const pathInfo = await stat(actual);
-        if (openedInfo.dev !== pathInfo.dev || openedInfo.ino !== pathInfo.ino) return undefined;
+        if (!pathInfo.isFile() || !fileIdentityMatches(openedInfo, pathInfo)) return undefined;
         return actual;
       };
       const actual = await verifyPathIdentity();
@@ -357,7 +341,7 @@ export class FileGraphSource implements KnowledgeSource {
       };
     } catch (error) {
       if (signal?.aborted || (error as Error).name === "AbortError") throw new KnowledgeSourceError("TIMEOUT", "查询已取消。");
-      if (transientPathError(error)) return undefined;
+      if (skippableTraversalError(error)) return undefined;
       throw error;
     } finally {
       await handle?.close();
@@ -373,7 +357,7 @@ export class FileGraphSource implements KnowledgeSource {
     throwIfAborted(signal);
     const cappedLimit = Math.max(1, Math.min(5, Math.floor(limit)));
     const traversal: TraversalState = { files: this.singleFile ? [this.singleFile] : [], directories: 1, entries: 0, stopped: false };
-    if (!this.singleFile) await this.markdownFiles(this.root, traversal, signal);
+    if (!this.singleFile) await this.searchableFiles(this.root, traversal, signal);
     traversal.files.sort();
     const documents: IndexedDocument[] = [];
     let totalBytes = 0;
@@ -402,7 +386,7 @@ export class FileGraphSource implements KnowledgeSource {
       if (!input.rawContent.trim()) throw new KnowledgeSourceError("INVALID_INPUT", "记录内容不能为空。");
       if (contentBytes > MAX_WRITE_BYTES) throw new KnowledgeSourceError("PAYLOAD_TOO_LARGE", "单次记录不能超过 256 KiB。");
       if (input.target.sourceId !== this.sourceId) throw new KnowledgeSourceError("INVALID_INPUT", "目标知识源不匹配。");
-      const relativePath = validateRelativePath(input.target.relativePath);
+      const relativePath = validateWritePath(input.target.relativePath);
       const target = resolve(this.root, ...relativePath.split("/"));
       if (!isInside(this.root, target)) throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "写入位置超出知识源目录。");
       if (this.singleFile && (relativePath !== basename(this.singleFile) || target !== this.singleFile)) {
@@ -416,7 +400,7 @@ export class FileGraphSource implements KnowledgeSource {
 
   async locate(documentId: string): Promise<{ absolutePath: string }> {
     this.ensureInitialized();
-    const relativePath = validateRelativePath(documentId);
+    const relativePath = validateDocumentPath(documentId);
     const candidate = resolve(this.root, ...relativePath.split("/"));
     if (!isInside(this.root, candidate) || (this.singleFile && candidate !== this.singleFile)) {
       throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "原文定位超出项目范围。");
@@ -452,7 +436,7 @@ export class FileGraphSource implements KnowledgeSource {
       const openedInfo = await handle.stat();
       const openedPath = await realpath(target);
       const pathInfo = await stat(openedPath);
-      if (!openedInfo.isFile() || !isInside(this.root, openedPath) || openedInfo.dev !== pathInfo.dev || openedInfo.ino !== pathInfo.ino) {
+      if (!openedInfo.isFile() || !pathInfo.isFile() || !isInside(this.root, openedPath) || !fileIdentityMatches(openedInfo, pathInfo)) {
         throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "写入位置在打开时发生变化，已拒绝写入。");
       }
       const startSize = openedInfo.size;

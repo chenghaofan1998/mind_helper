@@ -4,11 +4,13 @@ import { desktopMousePosition, desktopWindowPosition, hideDesktopWindow, initial
 import { loadDraft, loadProjectDraft, saveDraft } from "./draftStore";
 import { focusRiskReturnTarget, focusTarget, modalKeyboardAction, wrappedFocusIndex } from "./focusTrap";
 import type { RiskReturnKind, RiskReturnTarget } from "./focusTrap";
+import { icon } from "./icons";
 import { applyExplicitMode, localRoute } from "./knowledge/intentRouter";
 import { projectSwitcherModel, TRAY_SETTINGS_HINT } from "./layout";
 import { listProjects, listSources, locateKnowledge, searchKnowledge, writeKnowledge } from "./knowledge/client";
 import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, SearchIntent, SourceDescriptor, SourceLocation, WriteReceipt } from "./knowledge/types";
 import { nextResultIndex, resultKeyboardAction } from "./resultNavigation";
+import { renderRichText } from "./richText";
 import { commandForClipboard, isDangerous, riskImpact } from "./search";
 import { canSubmitWrite, effectiveWritePath } from "./writeTarget";
 import { ManualWindowDrag, shouldBeginWindowDrag } from "./windowDrag";
@@ -89,8 +91,8 @@ function sourceForResult(result: KnowledgeResult): SourceDescriptor | undefined 
 
 function renderTabs(): string {
   return `<nav class="mode-tabs" role="tablist" aria-label="选择意图">
-    <button type="button" role="tab" aria-selected="${mode === "record"}" class="${mode === "record" ? "active" : ""}" data-action="mode" data-mode="record">记入</button>
-    <button type="button" role="tab" aria-selected="${mode === "query"}" class="${mode === "query" ? "active" : ""}" data-action="mode" data-mode="query">查询</button>
+    <button type="button" role="tab" aria-selected="${mode === "record"}" class="${mode === "record" ? "active" : ""}" data-action="mode" data-mode="record">${icon("record")}<span>记入</span></button>
+    <button type="button" role="tab" aria-selected="${mode === "query"}" class="${mode === "query" ? "active" : ""}" data-action="mode" data-mode="query">${icon("search")}<span>查询</span></button>
   </nav>`;
 }
 
@@ -98,10 +100,11 @@ function renderProjectSwitcher(): string {
   const model = projectSwitcherModel(projects, projectId);
   if (model.kind === "empty") return "";
   if (model.kind === "single") {
-    return `<div class="project-switcher single"><span class="project-switcher-label">${model.label}</span><span class="project-chip" title="${escapeHtml(model.name)}">${escapeHtml(model.name)}</span></div>`;
+    return `<div class="project-switcher single"><span class="project-switcher-label">${icon("folder")}<span>${model.label}</span></span><span class="project-chip" title="${escapeHtml(model.name)}">${escapeHtml(model.name)}</span></div>`;
   }
   const options = model.options.map((option) => `<option value="${escapeHtml(option.id)}" ${option.selected ? "selected" : ""}>${escapeHtml(option.name)}</option>`).join("");
-  return `<div class="project-switcher"><label for="project-select">${model.label}</label><select id="project-select" ${busy ? "disabled" : ""}>${options}</select></div>`;
+  const selectedName = model.options.find((option) => option.selected)?.name ?? "";
+  return `<div class="project-switcher"><label for="project-select">${icon("folder")}<span>${model.label}</span></label><select id="project-select" title="${escapeHtml(selectedName)}" ${busy ? "disabled" : ""}>${options}</select></div>`;
 }
 
 function renderSourceOptions(requireWrite = false): string {
@@ -121,12 +124,13 @@ function renderTargetEditor(): string {
 function renderRecordInput(): string {
   const targetPath = effectiveTargetPath();
   const project = activeProject();
+  const targetSummary = `${project?.name ?? "未配置项目"} · ${targetPath || "未设置写入位置"}`;
   return `<form id="record-form" class="intent-form record-form">
     <label class="sr-only" for="raw-content">原始内容</label>
     <textarea class="record-input" id="raw-content" maxlength="262144" required placeholder="输入或粘贴想保存的原始内容…" ${busy ? "disabled" : ""}>${escapeHtml(rawContent)}</textarea>
     <section class="target-card" aria-label="写入位置">
-      <span><strong>${escapeHtml(project?.name ?? "未配置项目")}</strong> · ${escapeHtml(targetPath || "未设置写入位置")}</span>
-      ${project ? `<button class="text-button" type="button" data-action="edit-target" ${busy ? "disabled" : ""}>${editingTarget ? "收起" : "更改"}</button>` : ""}
+      <span class="target-summary" title="${escapeHtml(targetSummary)}"><strong>${escapeHtml(project?.name ?? "未配置项目")}</strong> · ${escapeHtml(targetPath || "未设置写入位置")}</span>
+      ${project ? `<button class="text-button" type="button" data-action="edit-target" ${busy ? "disabled" : ""}>${icon("edit")}<span>${editingTarget ? "收起" : "更改"}</span></button>` : ""}
     </section>
   </form>`;
 }
@@ -146,12 +150,12 @@ function renderRecordBody(): string {
 
 function renderRecordActions(): string {
   const canWrite = canSubmitWrite(rawContent, relativePath, activeSource());
-  return `<button id="record-submit" class="primary" type="submit" form="record-form" ${busy || !canWrite ? "disabled" : ""}>${busy ? "正在保存…" : errorMessage ? "重试保存" : "保存到知识库"}<kbd>Ctrl+Enter</kbd></button>`;
+  return `<button id="record-submit" class="primary" type="submit" form="record-form" ${busy || !canWrite ? "disabled" : ""}>${icon("save")}<span>${busy ? "正在保存…" : errorMessage ? "重试保存" : "保存到知识库"}</span><kbd>Ctrl+Enter</kbd></button>`;
 }
 
 function renderExcerpt(result: KnowledgeResult): string {
   if (result.kind === "command") return `<pre class="command-block"><code>${escapeHtml(commandForClipboard(result.excerpt))}</code></pre>`;
-  return `<blockquote class="evidence-text">${escapeHtml(result.excerpt)}</blockquote>`;
+  return `<div class="evidence-text markdown-body">${renderRichText(result.excerpt)}</div>`;
 }
 
 function resultKindLabel(result: KnowledgeResult): string {
@@ -167,14 +171,14 @@ function renderResult(result: KnowledgeResult, index: number): string {
   const dangerous = result.kind === "command" && isDangerous(commandForClipboard(result.excerpt));
   const selected = index === selectedResultIndex;
   return `<article class="result-card ${selected ? "selected" : ""}" data-result-index="${index}" data-id="${escapeHtml(result.id)}" data-risk-return="result-card" tabindex="${selected ? "0" : "-1"}" ${selected ? 'aria-current="true"' : ""}>
-    <header class="result-heading"><div><span class="evidence-label">知识库原文</span><h2>${escapeHtml(result.title)}</h2></div><span class="result-kind">${resultKindLabel(result)}</span></header>
+    <header class="result-heading"><div><span class="evidence-label">${icon("file")}<span>知识库原文</span></span><h2>${escapeHtml(result.title)}</h2></div><span class="result-kind">${resultKindLabel(result)}</span></header>
     ${renderExcerpt(result)}
-    ${result.contextBefore || result.contextAfter ? `<details class="context-details"><summary>展开必要上下文</summary>${result.contextBefore ? `<div><b>前文</b><p>${escapeHtml(result.contextBefore)}</p></div>` : ""}${result.contextAfter ? `<div><b>后文</b><p>${escapeHtml(result.contextAfter)}</p></div>` : ""}</details>` : ""}
+    ${result.contextBefore || result.contextAfter ? `<details class="context-details"><summary>展开必要上下文</summary>${result.contextBefore ? `<div><b>前文</b><section class="markdown-body">${renderRichText(result.contextBefore)}</section></div>` : ""}${result.contextAfter ? `<div><b>后文</b><section class="markdown-body">${renderRichText(result.contextAfter)}</section></div>` : ""}</details>` : ""}
     <p class="source-line">${escapeHtml(locationLabel(result.location))}<br><span>${escapeHtml(sourceVersion(result.location))}</span></p>
     ${dangerous ? `<p class="risk-note">${escapeHtml(riskImpact(commandForClipboard(result.excerpt)))}</p>` : ""}
     <footer class="result-actions">
-      <button class="primary" data-action="copy" data-id="${escapeHtml(result.id)}" data-risk-return="copy-button">${result.kind === "command" ? "复制命令" : "复制原文"}${dangerous ? " · 需确认" : ""}</button>
-      <button data-action="${canLocate ? "locate" : "copy-location"}" data-id="${escapeHtml(result.id)}">${canLocate ? "打开原文" : "复制定位"}</button>
+      <button class="primary" data-action="copy" data-id="${escapeHtml(result.id)}" data-risk-return="copy-button">${icon("copy")}<span>${result.kind === "command" ? "复制命令" : "复制原文"}${dangerous ? " · 需确认" : ""}</span></button>
+      <button data-action="${canLocate ? "locate" : "copy-location"}" data-id="${escapeHtml(result.id)}">${icon(canLocate ? "open" : "copy")}<span>${canLocate ? "打开原文" : "复制定位"}</span></button>
     </footer>
   </article>`;
 }
@@ -198,7 +202,7 @@ function renderQueryInput(): string {
 
 function renderQueryActions(): string {
   const canSearch = Boolean(activeSource()?.capabilities.includes("search"));
-  return `<button id="query-submit" class="primary" type="submit" form="query-form" ${loading || busy || !canSearch || !query.trim() ? "disabled" : ""}>${busy ? "查询中…" : errorMessage ? "重试查询" : "查询"}<kbd>Enter</kbd></button>`;
+  return `<button id="query-submit" class="primary" type="submit" form="query-form" ${loading || busy || !canSearch || !query.trim() ? "disabled" : ""}>${icon("search")}<span>${busy ? "查询中…" : errorMessage ? "重试查询" : "查询"}</span><kbd>Enter</kbd></button>`;
 }
 
 function renderRiskModal(): string {
@@ -219,7 +223,7 @@ function renderRiskModal(): string {
 
 function render(): void {
   root.innerHTML = `<main class="pocket">
-    <header class="app-header"><strong>AP</strong><span class="product-name">Action Pocket</span><span class="header-spacer"></span>${renderProjectSwitcher()}${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
+    <header class="app-header"><span class="app-mark"><img src="./action-pocket.png" alt=""></span><span class="product-name">Action Pocket</span><span class="header-spacer"></span>${renderProjectSwitcher()}${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
     <div class="shell-top">
       ${renderTabs()}
       ${mode === "record" ? renderRecordInput() : renderQueryInput()}

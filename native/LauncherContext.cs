@@ -29,6 +29,7 @@ namespace ActionPocketLauncher
         private HotkeyWindow hotkey;
         private LauncherSettingsDocument launcherSettings;
         private readonly NotifyIcon tray;
+        private readonly Icon trayIcon;
         private readonly System.Windows.Forms.Timer monitor;
         private Process shell;
         private IntPtr shellHandle;
@@ -43,6 +44,9 @@ namespace ActionPocketLauncher
 
         [DllImport("user32.dll")]
         private static extern bool IsWindow(IntPtr window);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsZoomed(IntPtr window);
 
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
@@ -89,8 +93,10 @@ namespace ActionPocketLauncher
                 if (!hotkeyRegistered)
                     MessageBox.Show(HotkeyRules.Display(launcherSettings.hotkey) + " 注册失败，可能已被其他程序占用。仍可通过托盘显示 Action Pocket。", "Action Pocket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
+                trayIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (trayIcon == null) throw new InvalidOperationException("无法从 Action Pocket 程序中加载托盘图标。");
                 tray = new NotifyIcon();
-                tray.Icon = SystemIcons.Application;
+                tray.Icon = trayIcon;
                 tray.Text = "Action Pocket（双击显示）";
                 tray.ContextMenuStrip = BuildTrayMenu();
                 tray.DoubleClick += delegate { RequestShowShell(); };
@@ -117,6 +123,8 @@ namespace ActionPocketLauncher
                     tray.Visible = false;
                     tray.Dispose();
                 }
+                if (trayIcon != null)
+                    trayIcon.Dispose();
                 if (hotkey != null)
                     hotkey.Dispose();
                 Stop(shell);
@@ -258,6 +266,13 @@ namespace ActionPocketLauncher
                 }
                 return;
             }
+            if (IsZoomed(handle) && showRequested)
+            {
+                ShowWindow(handle, SwRestore);
+                SetForegroundWindow(handle);
+                stableShowTicks = 0;
+                return;
+            }
             if (showRequested)
             {
                 ShowWindow(handle, SwShow);
@@ -321,7 +336,7 @@ namespace ActionPocketLauncher
                 IntPtr handle = FindShellWindow();
                 if (handle != IntPtr.Zero)
                 {
-                    ShowWindow(handle, IsIconic(handle) ? SwRestore : SwShow);
+                    ShowWindow(handle, IsIconic(handle) || IsZoomed(handle) ? SwRestore : SwShow);
                     SetForegroundWindow(handle);
                 }
             }
@@ -408,6 +423,8 @@ namespace ActionPocketLauncher
                     tray.Visible = false;
                     tray.Dispose();
                 }
+                if (trayIcon != null)
+                    trayIcon.Dispose();
                 if (hotkey != null)
                     hotkey.Dispose();
                 Stop(shell);

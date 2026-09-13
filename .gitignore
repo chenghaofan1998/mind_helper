@@ -13,5 +13,6 @@ dist-native/
 web-dist/
 .test-dist/
 .server-dist/
+native/obj/
 
 .ap-data/

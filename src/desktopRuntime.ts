@@ -1,5 +1,5 @@
 import { computer, events, init, window as neutralinoWindow } from "@neutralinojs/lib";
-import { attemptDesktopHide } from "./desktopRuntimeState";
+import { attemptDesktopHide, fittedDesktopWindowSize } from "./desktopRuntimeState";
 
 interface DesktopCallbacks {
   onPinnedChange(value: boolean): void;
@@ -69,6 +69,12 @@ export function isDesktopRuntime(): boolean {
   return state === "ready";
 }
 
+async function fitInitialDesktopWindow(): Promise<void> {
+  if (await neutralinoWindow.isMaximized()) await neutralinoWindow.unmaximize();
+  await neutralinoWindow.setSize(fittedDesktopWindowSize(screen.availWidth, screen.availHeight));
+  await neutralinoWindow.center();
+}
+
 async function registerBridgeListeners(): Promise<void> {
   if (listenersRegistered) return;
   listenersRegistered = true;
@@ -76,6 +82,7 @@ async function registerBridgeListeners(): Promise<void> {
     events.on("ready", () => {
       state = "ready";
       hideFailureReported = false;
+      void fitInitialDesktopWindow().catch((error) => callbacks?.onError(`窗口尺寸适配失败：${error instanceof Error ? error.message : String(error)}`));
       callbacks?.onPinnedChange(pinned);
     }),
     events.on("serverOffline", () => { state = "offline"; }),

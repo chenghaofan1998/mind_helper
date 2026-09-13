@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { constants } from "node:fs";
-import { mkdtemp, mkdir, open, readFile, readdir, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, open, readFile, readdir, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { FILE_GRAPH_SEARCH_LIMITS, FileGraphSource, localDailyJournalPath, parseMarkdown } from "./fileGraph.js";
+import { fileIdentityMatches } from "./fileGraphPaths.js";
 
 async function graph(): Promise<{ root: string; source: FileGraphSource }> {
   const root = await mkdtemp(join(tmpdir(), "action-pocket-"));
@@ -48,6 +49,14 @@ function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
   return new Promise((resolveExit) => child.once("exit", () => resolveExit()));
 }
+
+test("Windows mounted filesystems do not reject stable paths solely for inconsistent file IDs", () => {
+  const handleIdentity = { dev: 1, ino: 100 };
+  const pathIdentity = { dev: 2, ino: 200 };
+  assert.equal(fileIdentityMatches(handleIdentity, pathIdentity, "win32"), true);
+  assert.equal(fileIdentityMatches(handleIdentity, pathIdentity, "linux"), false);
+  assert.equal(fileIdentityMatches({ dev: 1, ino: 0 }, pathIdentity, "linux"), true);
+});
 
 test("requires an existing, accessible, absolute Graph directory without creating it", async () => {
   const relativeSource = new FileGraphSource("relative-graph");
@@ -127,6 +136,26 @@ test("search recursively indexes Markdown files across multiple directory levels
   const results = await source.search("recursive nested marker", 5);
   assert.equal(results.length, 1);
   assert.equal(results[0].location.path, "projects/alpha/decisions/architecture/storage.md");
+});
+
+test("folder projects index common code, configuration, HTML, and text files", async () => {
+  const { root, source } = await graph();
+  await mkdir(join(root, "src"));
+  await writeFile(join(root, "src", "agent.py"), "def coordinate_agents():\n    return 'collaboration-marker'\n");
+  await writeFile(join(root, "config.yaml"), "pipeline: retrieval-pipeline-marker\n");
+  await writeFile(join(root, "report.html"), "<h1>Knowledge report</h1><p>html-report-marker</p>\n");
+  await writeFile(join(root, "README.txt"), "workspace-text-marker\n");
+
+  for (const [query, path] of [
+    ["collaboration marker", "src/agent.py"],
+    ["retrieval pipeline marker", "config.yaml"],
+    ["html report marker", "report.html"],
+    ["workspace text marker", "README.txt"],
+  ]) {
+    const results = await source.search(query, 5);
+    assert.equal(results[0]?.location.path, path);
+  }
+  assert.equal((await source.locate("src/agent.py")).absolutePath, join(root, "src", "agent.py"));
 });
 
 test("natural-language Chinese queries match meaningful segmented terms", async () => {
@@ -400,6 +429,20 @@ test("returns an explicit IO failure instead of a success receipt", async () => 
   const receipt = await source.write({ rawContent: "must-not-succeed", target: { sourceId: "file-graph", relativePath: "not-a-file.md" } });
   assert.equal(receipt.ok, false);
   if (!receipt.ok) assert.equal(receipt.code, "IO_ERROR");
+});
+
+test("search skips unreadable child files instead of rejecting the whole project", { skip: process.platform === "win32" }, async () => {
+  const { root, source } = await graph();
+  const unreadable = join(root, "blocked.json");
+  await writeFile(unreadable, "blocked-private-marker");
+  await chmod(unreadable, 0);
+  await writeFile(join(root, "visible.md"), "visible-project-marker");
+  try {
+    const results = await source.search("visible project marker", 5);
+    assert.equal(results[0]?.location.path, "visible.md");
+  } finally {
+    await chmod(unreadable, 0o600);
+  }
 });
 
 test("search skips hidden caches, backup directory, symlinks, and files over the scan limit", async () => {

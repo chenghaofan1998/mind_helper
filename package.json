@@ -16,7 +16,7 @@
     "design:generate:svg": "node design/generate-ui-mocks.mjs",
     "desktop:web": "npm run build && neu run",
     "desktop:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1 -Name ActionPocketLauncher",
-    "desktop:web-package": "npm run neutralino:ensure && npm run build && npm run server:build && npm run desktop:launcher && neu build --release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-release.ps1",
+    "desktop:web-package": "npm run neutralino:ensure && npm run icon:generate && npm run build && npm run server:build && npm run desktop:launcher && neu build --release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-release.ps1",
     "neutralino:ensure": "node scripts/ensure-neutralino-runtime.cjs",
     "neutralino:update": "neu update"
   },
@@ -24,6 +24,7 @@
     "@neutralinojs/lib": "^6.8.0",
     "@neutralinojs/neu": "^11.7.2",
     "@types/node": "^22.20.2",
+    "png2icons": "^2.0.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
   },
@@ -31,5 +32,9 @@
     "@neutralinojs/neu": {
       "uuid": "8.3.2"
     }
+  },
+  "dependencies": {
+    "dompurify": "^3.4.15",
+    "marked": "^18.0.13"
   }
 }

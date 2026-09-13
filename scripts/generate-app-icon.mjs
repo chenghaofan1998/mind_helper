@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { deflateSync } from "node:zlib";
+import png2icons from "png2icons";
 
 const width = 32;
 const pixels = Buffer.alloc((width * 4 + 1) * width);
@@ -38,6 +39,9 @@ function chunk(type, data) {
 const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(width, 4); header.set([8, 6, 0, 0, 0], 8);
 const png = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), chunk("IHDR", header), chunk("IDAT", deflateSync(pixels)), chunk("IEND", Buffer.alloc(0))]);
 const output = resolve("icons/action-pocket.png");
+const windowsOutput = resolve("icons/action-pocket.ico");
+const windowsIcon = png2icons.createICO(png, png2icons.BICUBIC2, 0, false, true);
+if (!windowsIcon) throw new Error("无法生成 Windows 应用图标。");
 await mkdir(resolve("icons"), { recursive: true });
-await writeFile(output, png);
-console.log(output);
+await Promise.all([writeFile(output, png), writeFile(windowsOutput, windowsIcon)]);
+console.log(`${output}\n${windowsOutput}`);

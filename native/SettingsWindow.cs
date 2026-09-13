@@ -62,6 +62,7 @@ namespace ActionPocketLauncher
             projectList.SetBounds(12, 110, 340, 380);
             projectList.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom;
             projectList.IntegralHeight = false;
+            projectList.HorizontalScrollbar = true;
             projectList.SelectedIndexChanged += delegate { ShowSelectedProject(); };
 
             Label nameLabel = new Label { Text = "项目名称" };
@@ -82,7 +83,7 @@ namespace ActionPocketLauncher
             kindBox.SetBounds(368, 186, 300, 24);
             kindBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             kindBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            kindBox.Items.Add("普通 Markdown 文件夹");
+            kindBox.Items.Add("普通文本/代码项目文件夹");
             kindBox.Items.Add("Logseq 文件夹");
             kindBox.SelectedIndexChanged += delegate { CommitKind(); };
 
@@ -95,6 +96,7 @@ namespace ActionPocketLauncher
             pathBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             pathBox.ReadOnly = true;
             pathBox.Multiline = true;
+            pathBox.WordWrap = true;
             pathBox.ScrollBars = ScrollBars.Vertical;
 
             defaultButton = new Button { Text = "设为默认项目" };
@@ -239,7 +241,7 @@ namespace ActionPocketLauncher
             string name = string.IsNullOrWhiteSpace(project.name) ? "（未命名）" : project.name;
             string scope = source == null || source.scope == null ? "来源缺失"
                 : source.scope.kind == "file" ? "单 Markdown 文件"
-                : source.kind == "logseq-files" ? "Logseq 文件夹" : "Markdown 文件夹";
+                : source.kind == "logseq-files" ? "Logseq 文件夹" : "文本/代码项目文件夹";
             return name + "    [" + scope + "]";
         }
 

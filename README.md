@@ -2,7 +2,7 @@
 
 **连接知识库与日常任务的统一轻量入口：随手记进去，需要时拿出来。**
 
-当前 MVP 是一个透明无边框桌面浮窗：可在多个本地文件夹、单个 Markdown 文件项目或标准 HTTP Connector 之间切换，可靠记入原始文字并找回少量原文。主窗只负责切换已配置项目、记入与查询；项目的增删改在托盘“设置…”打开的独立原生设置窗口中完成，主窗不再直接操作项目文件。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
+当前 MVP 是一个透明无边框桌面浮窗：可在多个本地文本/代码文件夹、单个 Markdown 文件项目或标准 HTTP Connector 之间切换，可靠记入原始文字并找回少量原文。主窗只负责切换已配置项目、记入与查询；项目的增删改在托盘“设置…”打开的独立原生设置窗口中完成，主窗不再直接操作项目文件。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
 
 下一阶段的“小窗 + 后台”、RAG 标准连接器、多模态输入与未来观察能力设计见 [`design/`](design/README.md)；Logseq 接入和问题辨识的已实现边界见 [`docs/LOGSEQ-AND-INTENT-ROUTING.md`](docs/LOGSEQ-AND-INTENT-ROUTING.md)。
 
@@ -38,7 +38,7 @@ $env:AP_GRAPH_DIR = "C:\Users\you\notes"
 npm start
 ```
 
-多项目服务配置使用受校验的 `AP_PROJECTS_FILE=/absolute/path/projects.v1.json`（优先）或便于测试的 `AP_PROJECTS_JSON`。配置为 `version: 1`，每个项目包含稳定 `id/name/defaultSourceId`，当前版本每项目包含一个 `markdown-files` 或 `logseq-files` source，scope 只能是绝对的 `directory` 或 `.md/.markdown` `file`。显式多项目配置不会与 `AP_GRAPH_DIR` 合并，避免意外扩大范围。
+多项目服务配置使用受校验的 `AP_PROJECTS_FILE=/absolute/path/projects.v1.json`（优先）或便于测试的 `AP_PROJECTS_JSON`。配置为 `version: 1`，每个项目包含稳定 `id/name/defaultSourceId`，当前版本每项目包含一个 `markdown-files`（兼容名称，目录模式会索引常见文本、代码和配置文件）或 `logseq-files` source，scope 只能是绝对的 `directory` 或 `.md/.markdown` `file`。显式多项目配置不会与 `AP_GRAPH_DIR` 合并，避免意外扩大范围。
 
 也可接入遵循 [`design/CONNECTOR-API.md`](design/CONNECTOR-API.md) 的标准 Connector。`AP_CONNECTOR_URL` 应指向 `/action-pocket/v1` 基础地址，Bearer token 只通过环境变量提供：
 
@@ -51,7 +51,7 @@ AP_CONNECTOR_TOKEN=*** npm start
 
 目录项目首次写入会在项目内创建目标子目录，默认位置是 `journals/YYYY_MM_DD.md`；单文件项目只允许追加到被选择的 `.md` / `.markdown` 文件。默认位置在来源可写且输入非空时立即生效，提交、显示与草稿恢复共用同一路径，用户也可显式修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
 
-> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳支持 Esc 隐藏、窗口置顶，并从标题栏非交互区域用原生光标跟随拖窗（外部 HTTP UI 显式注入 Neutralino globals 以连接原生桥；按下时读取窗口与光标起点，随后 16ms 轮询 `computer.getMousePosition` 并发送 `window.move`；规避 Windows 上 `beginDrag` 不存在及 `-webkit-app-region` 无效的问题，且光标与窗口同为 Win32 物理坐标，不需要 DPI 换算）；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 注册用户已配置的显示/隐藏快捷键（默认 `Ctrl+Alt+P`），可在托盘“设置…”中录入自定义组合键，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
+> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳启动时会主动退出最大化，按屏幕可用工作区将窗口约束在 360×480 至 560×680 之间并居中；项目选择器会占用剩余宽度而不会挤走图标，长项目名提供完整悬浮提示，长写入路径会自动换行，确保不同目录长度下界面都完整显示。它支持 Esc 隐藏、窗口置顶，并从标题栏非交互区域用原生光标跟随拖窗（外部 HTTP UI 显式注入 Neutralino globals 以连接原生桥；按下时读取窗口与光标起点，随后 16ms 轮询 `computer.getMousePosition` 并发送 `window.move`；规避 Windows 上 `beginDrag` 不存在及 `-webkit-app-region` 无效的问题，且光标与窗口同为 Win32 物理坐标，不需要 DPI 换算）；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 内嵌 Action Pocket 多尺寸 Windows 图标并用于系统托盘，不再使用系统默认图标。launcher 注册用户已配置的显示/隐藏快捷键（默认 `Ctrl+Alt+P`），可在托盘“设置…”中录入自定义组合键，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
 
 ## Windows P0 测试包
 
@@ -71,10 +71,10 @@ npm run desktop:web-package
 ## MVP 数据与能力边界
 
 - 核心以项目 `ProjectDescriptor` 作为用户可选作用域；每个项目引用一个或多个中立的 `KnowledgeSource` / `SourceDescriptor`。当前每个文件夹或单 Markdown 文件各自成为独立项目，未来 Logseq/HTTP/RAG 仍注册到同一项目列表。主窗只切换已配置项目：单项目显示为紧凑标签，多项目显示 `select`，没有“添加项目”加号或“设置”按钮；无项目时只提示“请从系统托盘打开设置”。项目增删改全部在托盘“设置…”的独立原生窗口完成，修改保存后原子写入配置并重启服务与小窗，主窗随重载立即看到新项目。设置窗对未来标准 Connector 预留同一来源模型的扩展点，但本轮不提供可保存却不能工作的远程源表单，只显示只读说明。
-- 文件型 Graph 会递归读取 `AP_GRAPH_DIR` 多级子目录内的 `.md` / `.markdown`；拒绝绝对路径、`..` 和符号链接越界，并跳过隐藏目录、缓存及备份目录。
-- `/api/sources` 发现来源及能力；`/api/search` 返回最多 5 条原文摘录、相邻块、相对路径、1-based 行号与版本；`/api/write` 追加原始内容并在 `fsync`、回读校验后返回回执。
+- 目录型 Graph 会递归读取 Markdown、HTML、纯文本及常见代码/配置文件；写入仍只允许 `.md` / `.markdown`。它拒绝绝对路径、`..` 和符号链接越界，跳过隐藏目录、依赖、构建产物、缓存、备份以及不可读的子项；根目录不可访问时仍明确报错。Windows 挂载盘和共享盘继续校验解析后的真实路径与项目边界，但不依赖这类文件系统不稳定的 `dev/ino` 文件标识。
+- `/api/sources` 发现来源及能力；`/api/search` 返回最多 5 条原文摘录、相邻块、相对路径、1-based 行号与版本；结果正文原生渲染 GFM Markdown 和安全 HTML 子集，HTML 会净化且不会执行脚本、样式、表单或嵌入内容；`/api/write` 追加原始内容并在 `fsync`、回读校验后返回回执。
 - 本地 Graph 检索诚实标记为**本地词法 fallback**，未接入或伪装 embedding/rerank；标准 Connector 原样声明来源侧检索能力。查询界面保持单问题框，底层以本地规则辨识 `find/command/understanding/task/decision`。
-- 浏览器仅持久化按项目标识的临时写入草稿；旧固定/反馈存储只为清理兼容保留，不再展示固定列表或“有用”操作。
+- 浏览器仅持久化按项目标识的临时写入草稿，不保存查询结果正文。
 - 文件来源通过受 token 与同源保护的 `/api/locate` 在服务端确认定位来自当前服务近期返回的检索结果，并重新验证项目成员关系、受限相对 `documentId`、真实路径与符号链接边界；Windows 以 `explorer.exe` 的参数数组选中文件，不接收任意绝对路径或命令。其他平台明确提示复制定位后手动打开；不声明 locate 的 Connector 只显示“复制定位”。
 - 命令只能复制，永不执行；递归删除、强制 Git 改写、磁盘覆盖、写库等危险内容复制前需要二次确认。
 - 本地 Graph 正文不会发送到云端，也不写入服务日志；只有用户显式配置标准 Connector 后，查询或写入内容才会发送给该 Connector。

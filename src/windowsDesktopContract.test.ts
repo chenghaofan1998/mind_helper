@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { attemptDesktopHide } from "./desktopRuntimeState.js";
+import { attemptDesktopHide, fittedDesktopWindowSize } from "./desktopRuntimeState.js";
 
 const source = (path: string) => readFile(join(process.cwd(), path), "utf8");
 
@@ -18,6 +18,21 @@ async function nativeSource(): Promise<string> {
   const parts = await Promise.all((await nativeSourceFiles()).map((name) => readFile(join(directory, name), "utf8")));
   return parts.join("\n");
 }
+
+test("desktop startup restores and fits the shell inside the available work area", async () => {
+  assert.deepEqual(fittedDesktopWindowSize(1920, 1080), { width: 560, height: 680 });
+  assert.deepEqual(fittedDesktopWindowSize(520, 620), { width: 488, height: 588 });
+  assert.deepEqual(fittedDesktopWindowSize(380, 500), { width: 360, height: 480 });
+  const bridge = await source("src/desktopRuntime.ts");
+  assert.match(bridge, /neutralinoWindow\.isMaximized\(\)/);
+  assert.match(bridge, /neutralinoWindow\.unmaximize\(\)/);
+  assert.match(bridge, /neutralinoWindow\.setSize\(fittedDesktopWindowSize\(screen\.availWidth, screen\.availHeight\)\)/);
+  assert.match(bridge, /neutralinoWindow\.center\(\)/);
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.maximize, false);
+  assert.equal(config.modes.window.minWidth, 360);
+  assert.equal(config.modes.window.minHeight, 480);
+});
 
 test("Neutralino is borderless and bridge startup has no premature not-ready warning", async () => {
   const config = JSON.parse(await source("neutralino.config.json"));
@@ -50,7 +65,8 @@ test("Windows launcher caches the shell HWND and recovers hidden, minimized and 
   assert.match(launcher, /shellHandle != IntPtr\.Zero && IsWindow\(shellHandle\)/);
   assert.match(launcher, /FindWindowForProcess\(\(uint\)shell\.Id\)/);
   assert.match(launcher, /shell = shellStarter\(root, port\);\s+showRequested = true/);
-  assert.match(launcher, /ShowWindow\(handle, IsIconic\(handle\) \? SwRestore : SwShow\)/);
+  assert.match(launcher, /IsZoomed\(handle\) && showRequested/);
+  assert.match(launcher, /ShowWindow\(handle, IsIconic\(handle\) \|\| IsZoomed\(handle\) \? SwRestore : SwShow\)/);
   assert.match(launcher, /SetForegroundWindow\(handle\)/);
   assert.match(launcher, /new HotkeyWindow\(ToggleShell\)/);
   assert.match(launcher, /DoubleClick \+= delegate \{ RequestShowShell\(\); \}/);
@@ -59,6 +75,19 @@ test("Windows launcher caches the shell HWND and recovers hidden, minimized and 
   assert.match(launcher, /shellRestartPolicy\.RegisterFailure\(\)/);
   assert.match(launcher, /StopAutomaticShellRestart/);
   assert.match(launcher, /可从托盘手动重试/);
+});
+
+test("Windows tray uses the embedded Action Pocket icon", async () => {
+  const launcher = await source("native/LauncherContext.cs");
+  const build = await source("native/build.ps1");
+  const project = await source("native/ActionPocketLauncher.csproj");
+  assert.match(launcher, /Icon\.ExtractAssociatedIcon\(Application\.ExecutablePath\)/);
+  assert.match(launcher, /tray\.Icon = trayIcon/);
+  assert.doesNotMatch(launcher, /SystemIcons\.Application/);
+  assert.match(build, /\/win32icon:\$icon/);
+  assert.match(project, /<ApplicationIcon>\.\.\\icons\\action-pocket\.ico<\/ApplicationIcon>/);
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.icon, "/icons/action-pocket.png");
 });
 
 test("Windows tray menu is limited to show, hide, settings and exit (source contract)", async () => {
@@ -80,6 +109,8 @@ test("Windows settings window stages project edits and owns its pickers (source 
   assert.match(settings, /\.md;\*\.markdown/);
   // Dialogs must be owned by the settings window so they cannot fall behind the shell.
   assert.match(settings, /dialog\.ShowDialog\(this\)/);
+  assert.match(settings, /projectList\.HorizontalScrollbar = true/);
+  assert.match(settings, /pathBox\.WordWrap = true/);
   assert.match(settings, /GraphConfiguration\.AddProjectToDocument\(document/);
   assert.match(settings, /设为默认项目/);
   assert.match(settings, /document\.activeProjectId = project\.id/);

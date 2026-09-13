@@ -8,6 +8,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $root "dist-native"
 $compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $output = Join-Path $outDir "$Name.exe"
+$icon = Join-Path $root "icons\action-pocket.ico"
 
 # The launcher is split by responsibility across several .cs files; compile them all together.
 $sources = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.cs" | Sort-Object Name | ForEach-Object { $_.FullName })
@@ -18,6 +19,9 @@ if (!(Test-Path $compiler)) {
 }
 if (!(Test-Path $entry)) {
   throw "Cannot find entry source at $entry"
+}
+if (!(Test-Path $icon)) {
+  throw "Cannot find application icon at $icon"
 }
 if ($sources.Count -eq 0) {
   throw "No C# sources found in $PSScriptRoot"
@@ -33,6 +37,7 @@ $outArg = "/out:$output"
   /target:winexe `
   /platform:x64 `
   /codepage:65001 `
+  /win32icon:$icon `
   $outArg `
   /reference:System.dll `
   /reference:System.Core.dll `
