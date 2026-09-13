@@ -51,7 +51,7 @@ AP_CONNECTOR_TOKEN=*** npm start
 
 目录项目首次写入会在项目内创建目标子目录，默认位置是 `journals/YYYY_MM_DD.md`；单文件项目只允许追加到被选择的 `.md` / `.markdown` 文件。默认位置在来源可写且输入非空时立即生效，提交、显示与草稿恢复共用同一路径，用户也可显式修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
 
-> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳支持 Esc 隐藏、窗口置顶，并从标题栏非交互区域用原生光标跟随拖窗（按下时读取窗口与光标起点，随后 16ms 轮询 `computer.getMousePosition` 并发送 `window.move`；规避 Windows 上 `beginDrag` 不存在及 `-webkit-app-region` 无效的问题，且光标与窗口同为 Win32 物理坐标，不需要 DPI 换算）；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 注册用户已配置的显示/隐藏快捷键（默认 `Ctrl+Alt+P`），可在托盘“设置…”中录入自定义组合键，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
+> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳支持 Esc 隐藏、窗口置顶，并从标题栏非交互区域用原生光标跟随拖窗（外部 HTTP UI 显式注入 Neutralino globals 以连接原生桥；按下时读取窗口与光标起点，随后 16ms 轮询 `computer.getMousePosition` 并发送 `window.move`；规避 Windows 上 `beginDrag` 不存在及 `-webkit-app-region` 无效的问题，且光标与窗口同为 Win32 物理坐标，不需要 DPI 换算）；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 注册用户已配置的显示/隐藏快捷键（默认 `Ctrl+Alt+P`），可在托盘“设置…”中录入自定义组合键，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
 
 ## Windows P0 测试包
 

@@ -22,7 +22,7 @@
 - [x] 主窗移除“添加项目”加号与底部“设置”按钮；单项目为紧凑标签、多项目为 `select`，无项目时只提示“请从系统托盘打开设置”。
 - [x] 主窗代码已改为三段结构（固定顶部输入/项目、中间唯一滚动结果区、底部固定操作区），结果卡操作使用同高同宽的 grid；实际窗口下是否完全不错位仍以第四节真机视觉验收为准。
 - [x] 已实现 Today AI 白色毛玻璃视觉 token：header 不再深色，主壳 white/84、14px blur、26px 圆角，背景只留轻蓝/桃漫反射；外层 HWND 无额外方形背景，实际透明合成仍以第四节真机视觉验收为准。
-- [x] 标题栏非交互区域已改为原生光标跟随拖窗：按下时并行读取 `window.getPosition` 与 `computer.getMousePosition`，之后用 16ms ticker 轮询光标位置并发送 `window.move`。不使用打包运行时（Neutralino 5.6.0）不存在的 `beginDrag`，也不使用 WebView2 不支持的 `-webkit-app-region`；光标与窗口坐标同属 Win32 物理坐标系，因此无需猜测 DPI 系数。仅标题栏非交互区域可拖，pointerdown/mousedown 任一先到即开始（活动手势中的重复 start 会被忽略），pointerup/mouseup/pointercancel/blur 均结束拖动；读取或移动失败会显式提示并结束手势，不会静默冻结。
+- [x] 标题栏非交互区域已改为原生光标跟随拖窗：外部 HTTP UI 通过 `modes.window.injectGlobals: true` 获得 `NL_PORT/NL_TOKEN` 并连接原生桥；按下时并行读取 `window.getPosition` 与 `computer.getMousePosition`，之后用 16ms ticker 轮询光标位置并发送 `window.move`。不使用打包运行时（Neutralino 5.6.0）不存在的 `beginDrag`，也不使用 WebView2 不支持的 `-webkit-app-region`；光标与窗口坐标同属 Win32 物理坐标系，因此无需猜测 DPI 系数。仅标题栏非交互区域可拖，pointerdown/mousedown 任一先到即开始（活动手势中的重复 start 会被忽略），pointerup/mouseup/pointercancel/blur 均结束拖动；桥接、读取或移动失败会显式提示并结束手势，不会静默返回或冻结。
 - [x] 按职责拆分启动器源文件（项目配置、启动器偏好、设置窗、launcher 生命周期、服务启动、自检），每个文件 <500 行；`native/build.ps1` 编译 `native/*.cs` 全部源文件。
 - [x] 更新打包脚本，将 Node 运行时、服务产物、Web 资源和桌面壳纳入同一 Windows 包。
 - [x] 为启动器增加不依赖 UI 的自检，并更新构建/打包说明。

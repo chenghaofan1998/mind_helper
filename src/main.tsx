@@ -426,7 +426,6 @@ root.addEventListener("pointerdown", beginWindowDragFromPointer);
 root.addEventListener("mousedown", beginWindowDragFromPointer);
 
 function beginWindowDragFromPointer(event: MouseEvent): void {
-  if (!isDesktopRuntime()) return;
   const target = event.target as HTMLElement;
   const inHeader = Boolean(target.closest(".app-header"));
   const inInteractiveControl = Boolean(target.closest("button, select, input, textarea, a"));

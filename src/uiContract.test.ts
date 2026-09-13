@@ -58,8 +58,14 @@ test("desktop chrome manually moves the native window without allowing labels in
   assert.match(main, /document\.addEventListener\("pointercancel", \(\) => manualWindowDrag\.end\(\)\)/);
   assert.match(main, /window\.addEventListener\("blur", \(\) => manualWindowDrag\.end\(\)\)/);
   assert.doesNotMatch(main, /devicePixelRatio/);
-  const config = JSON.parse(await source("neutralino.config.json")) as { nativeAllowList: string[] };
+  const config = JSON.parse(await source("neutralino.config.json")) as {
+    nativeAllowList: string[];
+    modes: { window: { injectGlobals: boolean; injectClientLibrary: boolean } };
+  };
   assert.ok(config.nativeAllowList.includes("computer.*"), "the bundled 5.6.0 runtime requires computer.* for cursor polling");
+  assert.equal(config.modes.window.injectGlobals, true, "an external HTTP UI needs Neutralino globals for native APIs");
+  assert.equal(config.modes.window.injectClientLibrary, false, "Vite already bundles the Neutralino client library");
+  assert.doesNotMatch(main, /function beginWindowDragFromPointer[\s\S]*?if \(!isDesktopRuntime\(\)\) return/);
   assert.match(main, /target\.closest\("\.app-header, \.mode-tabs, \.query-form > label"\)/);
   assert.match(main, /autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/);
   assert.match(css, /\.app-header \{[\s\S]*?touch-action: none;[\s\S]*?user-select: none/);

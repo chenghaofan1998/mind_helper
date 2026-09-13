@@ -37,6 +37,8 @@
       "fullScreen": false,
       "borderless": true,
       "transparent": true,
+      "injectGlobals": true,
+      "injectClientLibrary": false,
       "maximize": false,
       "hidden": false,
       "skipTaskbar": false,
