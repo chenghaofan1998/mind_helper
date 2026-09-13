@@ -96,18 +96,6 @@ export interface WriteFailure {
 
 export type WriteReceipt = WriteSuccess | WriteFailure;
 
-export interface PinnedResult {
-  location: SourceLocation;
-  pinnedAt: string;
-  sourceVersion?: string;
-}
-
-export interface UsefulFeedback {
-  location: SourceLocation;
-  value: "useful" | "not-useful";
-  at: string;
-}
-
 export interface LocatedDocument {
   absolutePath: string;
 }

@@ -13,5 +13,5 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["server/**/*.ts", "src/**/*.test.ts", "src/knowledge/types.ts", "src/preferenceStore.ts", "src/search.ts"]
+  "include": ["server/**/*.ts", "src/**/*.test.ts", "src/knowledge/types.ts", "src/search.ts"]
 }
