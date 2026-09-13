@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
-  "applicationId": "com.commandpocket.note",
+  "applicationId": "com.actionpocket.app",
   "version": "0.2.0",
   "defaultMode": "window",
   "port": 0,
@@ -9,6 +9,8 @@
   "enableServer": true,
   "enableNativeAPI": true,
   "tokenSecurity": "one-time",
+  "dataLocation": "system",
+  "storageLocation": "system",
   "logging": {
     "enabled": false,
     "writeToLogFile": false
@@ -19,31 +21,38 @@
     "clipboard.*",
     "events.*",
     "storage.*",
-    "os.*"
+    "os.*",
+    "computer.*"
   ],
   "modes": {
     "window": {
-      "title": "Command Pocket",
-      "width": 1180,
-      "height": 760,
-      "minWidth": 820,
-      "minHeight": 560,
+      "title": "Action Pocket",
+      "icon": "/icons/action-pocket.png",
+      "width": 560,
+      "height": 680,
+      "minWidth": 360,
+      "minHeight": 480,
       "center": true,
       "alwaysOnTop": false,
       "fullScreen": false,
-      "borderless": false,
+      "borderless": true,
+      "transparent": true,
+      "injectGlobals": true,
+      "injectClientLibrary": false,
       "maximize": false,
       "hidden": false,
+      "skipTaskbar": false,
       "resizable": true,
       "enableInspector": false,
       "exitProcessOnClose": true
     }
   },
   "cli": {
-    "binaryName": "CommandPocket",
+    "binaryName": "ActionPocket",
     "resourcesPath": "/web-dist/",
     "extensionsPath": "/extensions/",
     "clientLibrary": "/src/neutralino.js",
+    "clientVersion": "6.8.0",
     "binaryVersion": "5.6.0"
   }
 }

@@ -1,0 +1,197 @@
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import test from "node:test";
+import { attemptDesktopHide, fittedDesktopWindowSize } from "./desktopRuntimeState.js";
+
+const source = (path: string) => readFile(join(process.cwd(), path), "utf8");
+
+/** The Windows launcher is split across several files; contract checks read them as one unit. */
+async function nativeSourceFiles(): Promise<string[]> {
+  const directory = join(process.cwd(), "native");
+  const names = await readdir(directory);
+  return names.filter((name) => name.endsWith(".cs")).sort();
+}
+
+async function nativeSource(): Promise<string> {
+  const directory = join(process.cwd(), "native");
+  const parts = await Promise.all((await nativeSourceFiles()).map((name) => readFile(join(directory, name), "utf8")));
+  return parts.join("\n");
+}
+
+test("desktop startup restores and fits the shell inside the available work area", async () => {
+  assert.deepEqual(fittedDesktopWindowSize(1920, 1080), { width: 560, height: 680 });
+  assert.deepEqual(fittedDesktopWindowSize(520, 620), { width: 488, height: 588 });
+  assert.deepEqual(fittedDesktopWindowSize(380, 500), { width: 360, height: 480 });
+  const bridge = await source("src/desktopRuntime.ts");
+  assert.match(bridge, /neutralinoWindow\.isMaximized\(\)/);
+  assert.match(bridge, /neutralinoWindow\.unmaximize\(\)/);
+  assert.match(bridge, /neutralinoWindow\.setSize\(fittedDesktopWindowSize\(screen\.availWidth, screen\.availHeight\)\)/);
+  assert.match(bridge, /neutralinoWindow\.center\(\)/);
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.maximize, false);
+  assert.equal(config.modes.window.minWidth, 360);
+  assert.equal(config.modes.window.minHeight, 480);
+});
+
+test("Neutralino is borderless and bridge startup has no premature not-ready warning", async () => {
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.exitProcessOnClose, true);
+  assert.equal(config.modes.window.borderless, true);
+  assert.equal(config.modes.window.transparent, true);
+
+  const bridge = await source("src/desktopRuntime.ts");
+  assert.match(bridge, /type BridgeState = "idle" \| "connecting" \| "ready" \| "offline" \| "failed"/);
+  assert.doesNotMatch(bridge, /桌面桥接未就绪|setTimeout\(/);
+  assert.doesNotMatch(bridge, /throw error/);
+  assert.match(bridge, /暂时无法隐藏窗口/);
+
+  let rejectedHide: unknown;
+  const hidden = await attemptDesktopHide(() => Promise.reject(new Error("offline")), (error) => { rejectedHide = error; });
+  assert.equal(hidden, false);
+  assert.equal((rejectedHide as Error).message, "offline");
+
+  const main = await source("src/main.tsx");
+  assert.match(main, /event\.key === "Escape" && isDesktopRuntime\(\)/);
+  assert.doesNotMatch(main, /event\.key === "Escape"[^\n]*preventDefault/);
+});
+
+test("Windows launcher caches the shell HWND and recovers hidden, minimized and exited shells (source contract)", async () => {
+  const launcher = await nativeSource();
+  const mutexIndex = launcher.indexOf('new Mutex(false, @"Local\\ActionPocket.Launcher")');
+  const configurationIndex = launcher.indexOf("GraphConfiguration.Resolve(args)");
+  assert.ok(mutexIndex >= 0 && mutexIndex < configurationIndex);
+  assert.match(launcher, /private IntPtr shellHandle;/);
+  assert.match(launcher, /shellHandle != IntPtr\.Zero && IsWindow\(shellHandle\)/);
+  assert.match(launcher, /FindWindowForProcess\(\(uint\)shell\.Id\)/);
+  assert.match(launcher, /shell = shellStarter\(root, port\);\s+showRequested = true/);
+  assert.match(launcher, /IsZoomed\(handle\) && showRequested/);
+  assert.match(launcher, /ShowWindow\(handle, IsIconic\(handle\) \|\| IsZoomed\(handle\) \? SwRestore : SwShow\)/);
+  assert.match(launcher, /SetForegroundWindow\(handle\)/);
+  assert.match(launcher, /new HotkeyWindow\(ToggleShell\)/);
+  assert.match(launcher, /DoubleClick \+= delegate \{ RequestShowShell\(\); \}/);
+  assert.match(launcher, /Func<string, int, Process> shellStarter/);
+  assert.match(launcher, /MaximumAutomaticShellFailures = 3/);
+  assert.match(launcher, /shellRestartPolicy\.RegisterFailure\(\)/);
+  assert.match(launcher, /StopAutomaticShellRestart/);
+  assert.match(launcher, /可从托盘手动重试/);
+});
+
+test("Windows tray uses the embedded Action Pocket icon", async () => {
+  const launcher = await source("native/LauncherContext.cs");
+  const build = await source("native/build.ps1");
+  const project = await source("native/ActionPocketLauncher.csproj");
+  assert.match(launcher, /Icon\.ExtractAssociatedIcon\(Application\.ExecutablePath\)/);
+  assert.match(launcher, /tray\.Icon = trayIcon/);
+  assert.doesNotMatch(launcher, /SystemIcons\.Application/);
+  assert.match(build, /\/win32icon:\$icon/);
+  assert.match(project, /<ApplicationIcon>\.\.\\icons\\action-pocket\.ico<\/ApplicationIcon>/);
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.icon, "/icons/action-pocket.png");
+});
+
+test("Windows tray menu is limited to show, hide, settings and exit (source contract)", async () => {
+  const launcher = await nativeSource();
+  assert.match(launcher, /ContextMenuStrip menu = new ContextMenuStrip\(\)/);
+  assert.match(launcher, /menu\.Items\.Add\("显示 Action Pocket"/);
+  assert.match(launcher, /menu\.Items\.Add\("隐藏 Action Pocket"/);
+  assert.match(launcher, /menu\.Items\.Add\("设置…"/);
+  assert.match(launcher, /menu\.Items\.Add\("退出 Action Pocket"/);
+  assert.doesNotMatch(launcher, /添加文件夹项目…|添加 Markdown 项目…/);
+});
+
+test("Windows settings window stages project edits and owns its pickers (source contract)", async () => {
+  const launcher = await nativeSource();
+  const settings = await source("native/SettingsWindow.cs");
+  assert.match(settings, /internal sealed class ProjectSettingsWindow : Form/);
+  assert.match(settings, /FolderBrowserDialog/);
+  assert.match(settings, /OpenFileDialog/);
+  assert.match(settings, /\.md;\*\.markdown/);
+  // Dialogs must be owned by the settings window so they cannot fall behind the shell.
+  assert.match(settings, /dialog\.ShowDialog\(this\)/);
+  assert.match(settings, /projectList\.HorizontalScrollbar = true/);
+  assert.match(settings, /pathBox\.WordWrap = true/);
+  assert.match(settings, /GraphConfiguration\.AddProjectToDocument\(document/);
+  assert.match(settings, /设为默认项目/);
+  assert.match(settings, /document\.activeProjectId = project\.id/);
+  assert.match(settings, /这是最后一个项目/);
+  assert.match(settings, /标准 Connector 后续通过同一来源模型接入/);
+  assert.match(settings, /DialogResult = DialogResult\.OK;/);
+  // The tray "设置…" entry stages into a window and only restarts after a real save.
+  assert.match(launcher, /menu\.Items\.Add\("设置…", null, delegate \{ OpenSettings\(\); \}\)/);
+  assert.match(launcher, /GraphConfiguration\.EnsureCurrentConfigurationImported\(configuration\);\s+configuration\.GraphDirectory = null;\s+configuration\.ProjectsFile = GraphConfiguration\.ProjectsFile/);
+  assert.match(launcher, /window\.ShowDialog\(\) != DialogResult\.OK/);
+});
+
+test("Windows settings persist and safely rebind a customizable global shortcut (source contract)", async () => {
+  const launcher = await nativeSource();
+  const settings = await source("native/SettingsWindow.cs");
+  const preferences = await source("native/LauncherSettings.cs");
+  assert.match(preferences, /launcher-settings\.v1\.json/);
+  assert.doesNotMatch(preferences, /GraphConfiguration|ProjectsFile/);
+  assert.match(preferences, /File\.Replace\(temporary, SettingsFile, null\)/);
+  assert.match(preferences, /快捷键必须包含 Ctrl、Alt、Shift 或 Win/);
+  assert.match(preferences, /key >= Keys\.A && key <= Keys\.Z/);
+  assert.match(settings, /shortcutBox\.KeyDown \+= CaptureShortcut/);
+  assert.match(settings, /GetKeyState\(virtualKey\)/);
+  assert.match(settings, /恢复默认/);
+  assert.match(launcher, /bool hotkeyRegistered = hotkey\.Register\(launcherSettings\.hotkey\)/);
+  assert.match(launcher, /hotkeyRegistered\s+\? "关闭或最小化窗口后/);
+  assert.match(launcher, /快捷键当前未能注册。请双击托盘图标/);
+  assert.match(launcher, /hotkey\.Rebind\(stagedHotkey\)/);
+  assert.match(launcher, /HotkeyRebindResult\.CandidateUnavailable/);
+  assert.match(launcher, /旧快捷键 .* 已恢复/);
+  assert.match(launcher, /rollbackResult != HotkeyRebindResult\.Applied/);
+  assert.match(preferences, /SettingsPersistenceTransaction/);
+  assert.match(preferences, /ConfigurationFileSnapshot/);
+  assert.match(preferences, /restoreLauncherSettings\(\);[\s\S]*restoreProjects\(\);/);
+  assert.match(launcher, /SettingsPersistenceTransaction\.Commit/);
+  assert.match(launcher, /ConfigurationFileSnapshot\.Capture\(GraphConfiguration\.ProjectsFile\)/);
+  assert.match(launcher, /HotkeyRules\.Display\(launcherSettings\.hotkey\)/);
+});
+
+test("Windows launcher persists and assembles folder and single-Markdown projects (source contract)", async () => {
+  const launcher = await nativeSource();
+  const config = await source("native/GraphConfiguration.cs");
+  assert.match(config, /projects\.v1\.json/);
+  assert.match(config, /AP_PROJECTS_FILE/);
+  assert.match(config, /File\.Replace\(temporary, ProjectsFile, null\)/);
+  assert.match(config, /AddProjectToDocument\(destination, "directory"/);
+  assert.match(config, /LoadProjects\(ValidateProjectsFile\(configuration\.ProjectsFile\)\)/);
+  assert.match(launcher, /RestartForConfiguration\(\)/);
+  assert.match(launcher, /imported\.projects\.Count == 2/);
+
+  const build = await source("native/build.ps1");
+  assert.match(build, /System\.Web\.Extensions\.dll/);
+});
+
+test("Windows launcher sources are split by responsibility and stay under 500 lines (source contract)", async () => {
+  const files = await nativeSourceFiles();
+  assert.ok(files.length >= 6, `expected several native sources, found ${files.join(", ")}`);
+  for (const name of files) {
+    const text = await source(join("native", name));
+    const lineCount = text.replace(/\r/g, "").replace(/\n+$/, "").split("\n").length;
+    assert.ok(lineCount < 500, `${name} has ${lineCount} lines`);
+  }
+  const build = await source("native/build.ps1");
+  assert.match(build, /Get-ChildItem -LiteralPath \$PSScriptRoot -Filter "\*\.cs"/);
+  assert.match(build, /\$sources/);
+});
+
+test("Windows launcher leaves the outer HWND transparent for the rounded CSS glass shell (source contract)", async () => {
+  const launcher = await nativeSource();
+  const files = await nativeSourceFiles();
+  assert.ok(!files.includes("DesktopBackdrop.cs"));
+  assert.doesNotMatch(launcher, /DwmSetWindowAttribute|SetWindowCompositionAttribute|AccentEnableAcrylicBlurBehind|ApplyOpaqueFallback|MarkBackdropFailure/);
+  const config = JSON.parse(await source("neutralino.config.json"));
+  assert.equal(config.modes.window.transparent, true);
+});
+
+test("Windows package uses an isolated staging tree with one root executable", async () => {
+  const script = await source("scripts/prepare-windows-release.ps1");
+  assert.match(script, /windows-x64-staging/);
+  assert.match(script, /Join-Path \$shellDir "ActionPocketShell\.exe"/);
+  assert.match(script, /Join-Path \$stagingDir "ActionPocket\.exe"/);
+  assert.match(script, /Compress-Archive -Path \(Join-Path \$stagingDir "\*"\)/);
+  assert.match(script, /configured shortcut \(default: Ctrl\+Alt\+P\)/);
+});

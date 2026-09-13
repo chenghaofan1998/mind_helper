@@ -1,51 +1,110 @@
-# Command Pocket
+# Action Pocket
 
-本地优先的个人"行动记忆口袋"：Windows 托盘常驻 + 全局热键（`Ctrl+Alt+P`）小窗。
-**v5-pilot 定位**：行为记忆"再来一次"——不让你想起、不让你搜索，把你上次干成过的命令在按热键的 3 秒内送到手边，回车复制走人。
+**连接知识库与日常任务的统一轻量入口：随手记进去，需要时拿出来。**
 
-## 权威文档（按优先级）
+当前 MVP 是一个透明无边框桌面浮窗：可在多个本地文本/代码文件夹、单个 Markdown 文件项目或标准 HTTP Connector 之间切换，可靠记入原始文字并找回少量原文。主窗只负责切换已配置项目、记入与查询；项目的增删改在托盘“设置…”打开的独立原生设置窗口中完成，主窗不再直接操作项目文件。它不建立第二套正文库，也不会执行命令。产品范围以 [`docs/ACTION-POCKET-CHARTER.md`](docs/ACTION-POCKET-CHARTER.md) 为准。
 
-| 文档 | 角色 |
-|---|---|
-| `docs/v5pilot/SPEC.md` | **v5-pilot 试点规格 · 试点期唯一执行依据**（定位/场景/功能 F1-F10/合规红线/生死线） |
-| `docs/relook/DECISION.md` | v4 战略打回决议 + 四路重想终裁（为什么是"行为记忆"而不是"命令抽屉"） |
-| `docs/relook/` | 打回决议与四路提案（A 止损 / B 钉子 / C 场景 / D 市场实证）——决策链存档 |
+下一阶段的“小窗 + 后台”、RAG 标准连接器、多模态输入与未来观察能力设计见 [`design/`](design/README.md)；Logseq 接入和问题辨识的已实现边界见 [`docs/LOGSEQ-AND-INTENT-ROUTING.md`](docs/LOGSEQ-AND-INTENT-ROUTING.md)。
 
-> 历史规格（v2 MASTER/MVP、v3 VISION/SCENARIO、v4 PRODUCT/REQUIREMENTS/TESTCASES/ACCEPTANCE 等）已删除——产品方向经 v4 打回后已换代，旧文档不再适用。全部历史仍可在 **git 历史**中追溯（`git log -- docs/`）。
+## 本地运行
 
-## 目录结构
+需要 Node.js 20+。应用允许在未配置知识源时启动；本地 Graph 目录必须显式配置，服务不会猜测或扫描其他目录。
+
+```bash
+npm ci
+AP_GRAPH_DIR=/absolute/path/to/your/graph npm run dev
+# 浏览器打开 http://127.0.0.1:5173
+```
+
+Windows PowerShell：
+
+```powershell
+$env:AP_GRAPH_DIR = "C:\Users\you\notes"
+$env:AP_GRAPH_KIND = "logseq-files" # 文件型 Logseq；普通 Markdown 可省略
+npm run dev
+```
+
+生产构建可使用独立本机服务运行，不依赖 Vite 开发中间件：
+
+```bash
+AP_GRAPH_DIR=/absolute/path/to/your/graph npm start
+# 浏览器打开 http://127.0.0.1:43127
+```
+
+Windows PowerShell：
+
+```powershell
+$env:AP_GRAPH_DIR = "C:\Users\you\notes"
+npm start
+```
+
+多项目服务配置使用受校验的 `AP_PROJECTS_FILE=/absolute/path/projects.v1.json`（优先）或便于测试的 `AP_PROJECTS_JSON`。配置为 `version: 1`，每个项目包含稳定 `id/name/defaultSourceId`，当前版本每项目包含一个 `markdown-files`（兼容名称，目录模式会索引常见文本、代码和配置文件）或 `logseq-files` source，scope 只能是绝对的 `directory` 或 `.md/.markdown` `file`。显式多项目配置不会与 `AP_GRAPH_DIR` 合并，避免意外扩大范围。
+
+也可接入遵循 [`design/CONNECTOR-API.md`](design/CONNECTOR-API.md) 的标准 Connector。`AP_CONNECTOR_URL` 应指向 `/action-pocket/v1` 基础地址，Bearer token 只通过环境变量提供：
+
+```bash
+AP_CONNECTOR_URL=https://knowledge.example.com/action-pocket/v1 \
+AP_CONNECTOR_TOKEN=*** npm start
+```
+
+明文 HTTP 仅允许 `127.0.0.1`、`localhost` 或 `::1`。可通过 `AP_PORT` 修改本机服务端口。服务仅监听 `127.0.0.1`，启动时为页面生成新的会话令牌，并对静态资源启用 CSP、禁止嵌入和禁止缓存。
+
+目录项目首次写入会在项目内创建目标子目录，默认位置是 `journals/YYYY_MM_DD.md`；单文件项目只允许追加到被选择的 `.md` / `.markdown` 文件。默认位置在来源可写且输入非空时立即生效，提交、显示与草稿恢复共用同一路径，用户也可显式修改。建议先备份 Graph，并仅授予当前用户所需的读写权限；只读目录会返回明确错误，界面会保留未成功的草稿。
+
+> `npm run dev` 仍由 Vite 提供开发 API；`npm start` 构建前后端并由 `server/app.ts` 提供生产静态页面与同源 API。`npm run preview` 仅用于静态预览，不具备知识源读写能力。Neutralino 壳启动时会主动退出最大化，按屏幕可用工作区将窗口约束在 360×480 至 560×680 之间并居中；项目选择器会占用剩余宽度而不会挤走图标，长项目名提供完整悬浮提示，长写入路径会自动换行，确保不同目录长度下界面都完整显示。它支持 Esc 隐藏、窗口置顶，并从标题栏非交互区域用原生光标跟随拖窗（外部 HTTP UI 显式注入 Neutralino globals 以连接原生桥；按下时读取窗口与光标起点，随后 16ms 轮询 `computer.getMousePosition` 并发送 `window.move`；规避 Windows 上 `beginDrag` 不存在及 `-webkit-app-region` 无效的问题，且光标与窗口同为 Win32 物理坐标，不需要 DPI 换算）；关闭 X 会退出壳进程，但 launcher 与托盘继续驻留并可可靠重启壳。Windows 测试包由原生 launcher 先启动同源本机服务，再打开 Neutralino 壳；launcher 内嵌 Action Pocket 多尺寸 Windows 图标并用于系统托盘，不再使用系统默认图标。launcher 注册用户已配置的显示/隐藏快捷键（默认 `Ctrl+Alt+P`），可在托盘“设置…”中录入自定义组合键，不使用键盘钩子，缓存 shell HWND 并在全局退出时清理服务进程。该链路仍需 Windows 真机验收，验收前不能标记为正式可分发版本。
+
+## Windows P0 测试包
+
+需要 Windows x64、PowerShell 和构建机上的 Node.js 20+：
+
+```powershell
+npm ci
+npm run desktop:web-package
+```
+
+产物为 `dist/ActionPocket-windows-x64.zip`。包内已复制 Node 运行时、服务产物和 Web 资源；目标测试机不应再依赖预装 Node.js。`ActionPocket.exe` 不会在首次启动时强迫配置项目。托盘菜单只保留“显示 / 隐藏 / 设置… / 退出”；点“设置…”打开独立原生设置窗口（WinForms，与主浮窗分离）管理项目，配置原子持久化到 `%LOCALAPPDATA%\\ActionPocket\\projects.v1.json`，随后服务与小窗会受控重启并装配全部项目。旧 `graph-path.txt` 会迁移；`--graph-dir`、`--choose-graph` 与 `AP_GRAPH_DIR` 仍保留兼容。标准 HTTP Connector 继续通过环境变量接入。
+
+设置窗口可查看项目清单、添加文件夹、添加单个 `.md`/`.markdown`、把文件夹标记为普通 Markdown 或 Logseq、重命名项目、删除项目、设置默认项目，并直接按键录入全局显示/隐藏快捷键或恢复默认。快捷键必须是至少一个 Ctrl/Alt/Shift/Win 加字母、数字、F1–F24 或空格；冲突时明确提示并恢复旧快捷键。启动器偏好独立原子保存到 `%LOCALAPPDATA%\\ActionPocket\\launcher-settings.v1.json`，不会写进服务读取的项目配置。文件与目录选择框都以设置窗为 owner，不会藏到主窗后面；修改先在设置窗暂存，点击“保存”后才写入配置并受控重启服务与小窗，取消不改变正在运行的配置，删除最后一个项目会二次确认。启动器源码按职责拆分（项目配置、启动器偏好、设置窗、launcher 生命周期、服务启动、自检），`native/build.ps1` 编译 `native/*.cs` 全部源文件。
+
+构建与自动测试不能替代 Windows 热键、托盘、进程清理和启动耗时验收，执行步骤见 [`docs/P0-RELEASE-CHECKLIST.md`](docs/P0-RELEASE-CHECKLIST.md)。
+
+## MVP 数据与能力边界
+
+- 核心以项目 `ProjectDescriptor` 作为用户可选作用域；每个项目引用一个或多个中立的 `KnowledgeSource` / `SourceDescriptor`。当前每个文件夹或单 Markdown 文件各自成为独立项目，未来 Logseq/HTTP/RAG 仍注册到同一项目列表。主窗只切换已配置项目：单项目显示为紧凑标签，多项目显示 `select`，没有“添加项目”加号或“设置”按钮；无项目时只提示“请从系统托盘打开设置”。项目增删改全部在托盘“设置…”的独立原生窗口完成，修改保存后原子写入配置并重启服务与小窗，主窗随重载立即看到新项目。设置窗对未来标准 Connector 预留同一来源模型的扩展点，但本轮不提供可保存却不能工作的远程源表单，只显示只读说明。
+- 目录型 Graph 会递归读取 Markdown、HTML、纯文本及常见代码/配置文件；写入仍只允许 `.md` / `.markdown`。它拒绝绝对路径、`..` 和符号链接越界，跳过隐藏目录、依赖、构建产物、缓存、备份以及不可读的子项；根目录不可访问时仍明确报错。Windows 挂载盘和共享盘继续校验解析后的真实路径与项目边界，但不依赖这类文件系统不稳定的 `dev/ino` 文件标识。
+- `/api/sources` 发现来源及能力；`/api/search` 返回最多 5 条原文摘录、相邻块、相对路径、1-based 行号与版本；结果正文原生渲染 GFM Markdown 和安全 HTML 子集，HTML 会净化且不会执行脚本、样式、表单或嵌入内容；`/api/write` 追加原始内容并在 `fsync`、回读校验后返回回执。
+- 本地 Graph 检索诚实标记为**本地词法 fallback**，未接入或伪装 embedding/rerank；标准 Connector 原样声明来源侧检索能力。查询界面保持单问题框，底层以本地规则辨识 `find/command/understanding/task/decision`。
+- 浏览器仅持久化按项目标识的临时写入草稿，不保存查询结果正文。
+- 文件来源通过受 token 与同源保护的 `/api/locate` 在服务端确认定位来自当前服务近期返回的检索结果，并重新验证项目成员关系、受限相对 `documentId`、真实路径与符号链接边界；Windows 以 `explorer.exe` 的参数数组选中文件，不接收任意绝对路径或命令。其他平台明确提示复制定位后手动打开；不声明 locate 的 Connector 只显示“复制定位”。
+- 命令只能复制，永不执行；递归删除、强制 Git 改写、磁盘覆盖、写库等危险内容复制前需要二次确认。
+- 本地 Graph 正文不会发送到云端，也不写入服务日志；只有用户显式配置标准 Connector 后，查询或写入内容才会发送给该 Connector。
+
+## API 摘要
 
 ```text
-native/                 主交付源码（C# WinForms）
-  CommandPocketPilot.cs   v5-pilot 试点最小单文件（开发中，≤1200 行）
-  CommandPocketNative.cs  v4 旧版（已退役，留在 git 历史可回退）
-  build.ps1              编译 + 自测（只用 Windows 自带 csc.exe，无第三方依赖）
-scripts/                打包脚本
-docs/                   文档（v5pilot 规格 + relook 决策链）
-src/                    备用 Web 原型（Neutralino，仅界面实验，非主交付）
-dist/CommandPocketNative/   旧版现役 exe（v4 时代，待 v5-pilot 替换）
-dist-native/                npm run desktop 的开发构建输出
+GET  /api/projects
+GET  /api/sources
+POST /api/search  { query, projectId, sourceId?, limit?, intent? }
+POST /api/write   { rawContent, projectId, target: { sourceId, relativePath } }
+POST /api/locate  { projectId, sourceId, documentId }
 ```
 
-## 开发构建（改动 native 源码后）
+错误以稳定的 `code` 与非敏感 `message` 返回。API 使用每次开发服务启动时随机生成并注入页面的会话 token；浏览器请求还必须通过本机同源校验，无 `Origin` 的非浏览器请求也必须携带该 token。写入和查询只接受 `application/json`。单次写入上限 256 KiB，请求体上限 300 KiB，查询上限 500 字符；搜索总读取预算为 32 MiB，并限制目录、目录项、候选文件和候选块规模，跳过隐藏目录、`.git`、`logseq/bak`、符号链接和超大文件。
 
-```powershell
-npm run desktop            # 编译旧版 CommandPocketNative（已退役）
-npm run desktop:pilot      # 编译 v5-pilot：native\CommandPocketPilot.cs + --self-test → dist-native\CommandPocketPilot.exe
+## 验证
+
+```bash
+npm run typecheck
+npm test
+npm run build
+npm run server:build
 ```
 
-> Linux 容器内无法编译/运行 WinForms（不做任何工具链安装）；代码经静态审查 + Node 规则对拍（scripts/pilot-check.js）验证，最终编译与 UI 运行以 Windows `npm run desktop:pilot` 为准。
+手工闭环：
 
-## 重新打包
-
-```powershell
-npm run desktop:package
-```
-
-> `desktop:web*` 系列需要 node_modules（npm install），仅供备用 Web 原型实验。
-
-## 当前状态
-
-- v5-pilot 试点规格已锁版（`docs/v5pilot/SPEC.md`），待开发最小单文件 + 真机试点
-- 试点生死线：连 5 个工作日日均唤起 ≥5 且 唤起→复制中位 ≤10s 且 零打字采纳 ≥40% —— 过线升级为 v5 正式规格；连 3 日零唤起则作废归档
-- 真机验证前置：Windows 上 `npm run desktop`（编译 + SelfTest 全绿）+ 编译产物本机 Defender/SAC 实测（详见 SPEC §五）
+1. 用临时 Graph 启动：`AP_GRAPH_DIR=/tmp/ap-graph npm run dev`。
+2. 在“记入”输入唯一文本，确认目标后保存；检查对应 Markdown 保留原文。
+3. 在“查询”用自然语言找回，确认结果不超过 5 条，包含相对路径、行号和上下文。
+4. 将 Graph 改为只读后再次写入，确认不显示成功且输入仍在。
+5. 查询危险命令，确认首次复制被弹窗拦截，确认后仅进入剪贴板。
+6. 通过托盘“设置…”添加第二个项目并保存，确认服务与小窗受控重启；在主窗切换后确认查询与写入严格落在当前项目，且结果卡只显示“打开原文/复制定位”和“复制原文/命令”。

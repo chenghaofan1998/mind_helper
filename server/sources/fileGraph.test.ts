@@ -1,0 +1,512 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { constants } from "node:fs";
+import { chmod, mkdtemp, mkdir, open, readFile, readdir, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import test from "node:test";
+import { FILE_GRAPH_SEARCH_LIMITS, FileGraphSource, localDailyJournalPath, parseMarkdown } from "./fileGraph.js";
+import { fileIdentityMatches } from "./fileGraphPaths.js";
+
+async function graph(): Promise<{ root: string; source: FileGraphSource }> {
+  const root = await mkdtemp(join(tmpdir(), "action-pocket-"));
+  const source = new FileGraphSource(root);
+  await source.initialize();
+  return { root, source };
+}
+
+async function spawnLockOwner(lockPath: string): Promise<ChildProcessWithoutNullStreams> {
+  const script = `
+    import { randomUUID } from "node:crypto";
+    import { constants } from "node:fs";
+    import { open } from "node:fs/promises";
+    const lock = await open(${JSON.stringify(lockPath)}, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600);
+    await lock.writeFile(JSON.stringify({ owner: randomUUID(), pid: process.pid }));
+    await lock.sync();
+    process.stdout.write("ready\\n");
+    setInterval(() => {}, 1_000);
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", script], { stdio: ["pipe", "pipe", "pipe"] });
+  child.stdin.end();
+  await new Promise<void>((resolveReady, rejectReady) => {
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdout.setEncoding("utf8");
+    child.stdout.once("data", (chunk) => {
+      if (String(chunk).includes("ready")) resolveReady();
+      else rejectReady(new Error(`unexpected lock owner output: ${String(chunk)}`));
+    });
+    child.once("error", rejectReady);
+    child.once("exit", (code) => rejectReady(new Error(stderr || `lock owner exited ${code}`)));
+  });
+  return child;
+}
+
+function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolveExit) => child.once("exit", () => resolveExit()));
+}
+
+test("Windows mounted filesystems do not reject stable paths solely for inconsistent file IDs", () => {
+  const handleIdentity = { dev: 1, ino: 100 };
+  const pathIdentity = { dev: 2, ino: 200 };
+  assert.equal(fileIdentityMatches(handleIdentity, pathIdentity, "win32"), true);
+  assert.equal(fileIdentityMatches(handleIdentity, pathIdentity, "linux"), false);
+  assert.equal(fileIdentityMatches({ dev: 1, ino: 0 }, pathIdentity, "linux"), true);
+});
+
+test("requires an existing, accessible, absolute Graph directory without creating it", async () => {
+  const relativeSource = new FileGraphSource("relative-graph");
+  await assert.rejects(relativeSource.initialize(), /绝对路径/);
+
+  const parent = await mkdtemp(join(tmpdir(), "action-pocket-missing-"));
+  const missing = join(parent, "must-not-be-created");
+  await assert.rejects(new FileGraphSource(missing).initialize(), /已存在目录/);
+  await assert.rejects(stat(missing), { code: "ENOENT" });
+
+  const file = join(parent, "not-a-directory");
+  await writeFile(file, "x");
+  await assert.rejects(new FileGraphSource(file).initialize(), /已存在的目录/);
+});
+
+test("daily default uses the local calendar and changes across local midnight", async () => {
+  const { source } = await graph();
+  const beforeMidnight = new Date(2025, 0, 31, 23, 59, 59);
+  const afterMidnight = new Date(2025, 1, 1, 0, 0, 1);
+  assert.equal(localDailyJournalPath(beforeMidnight), "journals/2025_01_31.md");
+  assert.equal(source.descriptor(beforeMidnight).defaultWritePath, "journals/2025_01_31.md");
+  assert.equal(source.descriptor(afterMidnight).defaultWritePath, "journals/2025_02_01.md");
+});
+
+test("search exposes finite directory, entry, candidate, block, per-file, and aggregate limits", () => {
+  assert.deepEqual(FILE_GRAPH_SEARCH_LIMITS, {
+    maximumFileBytes: 2 * 1024 * 1024,
+    maximumTotalBytes: 32 * 1024 * 1024,
+    maximumFiles: 1_000,
+    maximumDirectories: 1_000,
+    maximumDirectoryEntries: 20_000,
+    maximumBlocks: 50_000,
+  });
+});
+
+test("parseMarkdown preserves 1-based lines and neighboring semantic blocks", () => {
+  const blocks = parseMarkdown("# Docker\n\n前一段解释\n\n```sh\ndocker ps\n```\n\n后一段");
+  assert.deepEqual(blocks.map((block) => block.line), [1, 3, 5, 9]);
+  assert.equal(blocks[2].kind, "command");
+  assert.equal(parseMarkdown("DELETE FROM users")[0].kind, "command");
+  assert.equal(parseMarkdown("- [ ] TODO 发布前检查")[0].kind, "task");
+  assert.equal(parseMarkdown("决策：选择文件型 graph，因为可直接定位原文。")[0].kind, "decision");
+});
+
+test("write appends raw content, creates directories, and returns verified location", async () => {
+  const { root, source } = await graph();
+  const rawContent = "困惑：为什么这样？\n例子：原样保留  两个空格";
+  const receipt = await source.write({ rawContent, target: { sourceId: "file-graph", relativePath: "journals/today.md" } });
+  assert.equal(receipt.ok, true);
+  assert.equal(await readFile(join(root, "journals/today.md"), "utf8"), `${rawContent}\n`);
+  if (receipt.ok) {
+    assert.equal(receipt.location.path, "journals/today.md");
+    assert.equal(receipt.location.line, 1);
+    assert.equal(receipt.location.version, receipt.version);
+  }
+});
+
+test("search returns top-N excerpts with source line and adjacent context", async () => {
+  const { root, source } = await graph();
+  await writeFile(join(root, "notes.md"), "# 容器清理\n\n清理前先查看磁盘。\n\n```sh\ndocker system prune\n```\n\n它会删除未使用资源。\n");
+  const results = await source.search("docker system", 3);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].location.path, "notes.md");
+  assert.equal(results[0].location.line, 5);
+  assert.equal(results[0].location.uri, pathToFileURL(join(root, "notes.md")).href);
+  assert.equal(results[0].kind, "command");
+  assert.match(results[0].contextBefore ?? "", /清理前/);
+  assert.match(results[0].contextAfter ?? "", /删除未使用/);
+  assert.ok(results.length <= 3);
+});
+
+test("search recursively indexes Markdown files across multiple directory levels", async () => {
+  const { root, source } = await graph();
+  const directory = join(root, "projects", "alpha", "decisions", "architecture");
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "storage.md"), "# 存储决策\n\n深层目录唯一标记 recursive-nested-marker。\n");
+  const results = await source.search("recursive nested marker", 5);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].location.path, "projects/alpha/decisions/architecture/storage.md");
+});
+
+test("folder projects index common code, configuration, HTML, and text files", async () => {
+  const { root, source } = await graph();
+  await mkdir(join(root, "src"));
+  await writeFile(join(root, "src", "agent.py"), "def coordinate_agents():\n    return 'collaboration-marker'\n");
+  await writeFile(join(root, "config.yaml"), "pipeline: retrieval-pipeline-marker\n");
+  await writeFile(join(root, "report.html"), "<h1>Knowledge report</h1><p>html-report-marker</p>\n");
+  await writeFile(join(root, "README.txt"), "workspace-text-marker\n");
+
+  for (const [query, path] of [
+    ["collaboration marker", "src/agent.py"],
+    ["retrieval pipeline marker", "config.yaml"],
+    ["html report marker", "report.html"],
+    ["workspace text marker", "README.txt"],
+  ]) {
+    const results = await source.search(query, 5);
+    assert.equal(results[0]?.location.path, path);
+  }
+  assert.equal((await source.locate("src/agent.py")).absolutePath, join(root, "src", "agent.py"));
+});
+
+test("natural-language Chinese queries match meaningful segmented terms", async () => {
+  const { root, source } = await graph();
+  await writeFile(join(root, "adam.md"), "# Adam\n\n动量帮助优化器平滑梯度方向。\n");
+  const results = await source.search("为什么优化器需要动量", 5);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].location.path, "adam.md");
+});
+
+test("search intent limits results to the selected user-facing type", async () => {
+  const { root, source } = await graph();
+  await writeFile(join(root, "mixed.md"), "普通发布说明 marker\n\n- [ ] TODO 发布 marker\n\n决策：选择灰度发布 marker。\n");
+  const tasks = await source.search("发布 marker", 5, undefined, "task");
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].kind, "task");
+  const decisions = await source.search("发布 marker", 5, undefined, "decision");
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].kind, "decision");
+});
+
+test("duplicate blocks have distinct result identities and source lines", async () => {
+  const { root, source } = await graph();
+  await writeFile(join(root, "repeat.md"), "same needle\n\nsame needle\n");
+  const results = await source.search("same needle", 5);
+  assert.deepEqual(results.map((item) => item.location.line), [1, 3]);
+  assert.notEqual(results[0].id, results[1].id);
+});
+
+test("concurrent appends do not lose content", async () => {
+  const { root, source } = await graph();
+  await Promise.all(Array.from({ length: 12 }, (_, index) => source.write({
+    rawContent: `unique-${index}`,
+    target: { sourceId: "file-graph", relativePath: "inbox/all.md" },
+  })));
+  const saved = await readFile(join(root, "inbox/all.md"), "utf8");
+  for (let index = 0; index < 12; index += 1) assert.match(saved, new RegExp(`unique-${index}\\n`));
+});
+
+test("cross-process lock serializes append, verification, line calculation, and releases the lock", async () => {
+  const { root } = await graph();
+  const moduleUrl = new URL("./fileGraph.js", import.meta.url).href;
+  const runWriter = (value: string) => new Promise<number>((resolveWriter, rejectWriter) => {
+    const script = `
+      import { FileGraphSource } from ${JSON.stringify(moduleUrl)};
+      const source = new FileGraphSource(${JSON.stringify(root)});
+      await source.initialize();
+      const receipt = await source.write({ rawContent: ${JSON.stringify(value)}, target: { sourceId: "file-graph", relativePath: "shared.md" } });
+      if (!receipt.ok) throw new Error(receipt.code + ": " + receipt.message);
+      process.stdout.write(String(receipt.location.line));
+    `;
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", rejectWriter);
+    child.once("exit", (code) => code === 0 ? resolveWriter(Number(stdout)) : rejectWriter(new Error(stderr || `writer exited ${code}`)));
+  });
+
+  const values = Array.from({ length: 6 }, (_, index) => `process-${index}`);
+  const receiptLines = await Promise.all(values.map(runWriter));
+  const saved = await readFile(join(root, "shared.md"), "utf8");
+  assert.equal(saved.trim().split("\n").length, values.length);
+  assert.deepEqual([...receiptLines].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6]);
+  for (const value of values) assert.match(saved, new RegExp(`^${value}$`, "m"));
+  await assert.rejects(stat(join(root, "shared.md.action-pocket.lock")), { code: "ENOENT" });
+});
+
+test("persistent lock candidate stat failure still closes and safely removes the private candidate", async () => {
+  const { root, source } = await graph();
+  const target = join(root, "stat-failure.md");
+  const probe = await open(join(root, "stat-failure.probe"), constants.O_CREAT | constants.O_RDWR, 0o600);
+  const prototype = Object.getPrototypeOf(probe) as Record<string, any>;
+  const originalStat = prototype.stat;
+  await probe.close();
+  let failedHandle: any;
+  prototype.stat = async function () {
+    failedHandle = this;
+    throw Object.assign(new Error("injected persistent candidate stat failure"), { code: "EIO" });
+  };
+
+  let receipt;
+  try {
+    receipt = await source.write({ rawContent: "must fail", target: { sourceId: "file-graph", relativePath: "stat-failure.md" } });
+  } finally {
+    prototype.stat = originalStat;
+  }
+
+  assert.equal(receipt?.ok, false);
+  if (receipt && !receipt.ok) assert.equal(receipt.code, "IO_ERROR");
+  await assert.rejects(originalStat.call(failedHandle), { code: "EBADF" });
+  assert.equal((await readdir(root)).some((name) => name.includes(".action-pocket.lock")), false);
+  await assert.rejects(stat(target), { code: "ENOENT" });
+});
+
+test("lock initialization write or sync failure removes only the created lock and allows retry", async (context) => {
+  for (const method of ["writeFile", "sync"] as const) {
+    await context.test(`${method} failure`, async () => {
+      const { root, source } = await graph();
+      const target = join(root, `${method}.md`);
+      const lockPath = `${target}.action-pocket.lock`;
+      const probe = await open(join(root, `${method}.probe`), constants.O_CREAT | constants.O_RDWR, 0o600);
+      const prototype = Object.getPrototypeOf(probe) as Record<string, any>;
+      const original = prototype[method];
+      await probe.close();
+      let failed = false;
+      prototype[method] = async function (...args: any[]) {
+        if (!failed) {
+          failed = true;
+          throw Object.assign(new Error(`injected lock ${method} failure`), { code: "EIO" });
+        }
+        return original.apply(this, args);
+      };
+
+      let first;
+      try {
+        first = await source.write({ rawContent: "first", target: { sourceId: "file-graph", relativePath: `${method}.md` } });
+      } finally {
+        prototype[method] = original;
+      }
+      assert.equal(first?.ok, false);
+      if (first && !first.ok) assert.equal(first.code, "IO_ERROR");
+      await assert.rejects(stat(lockPath), { code: "ENOENT" });
+
+      const retry = await source.write({ rawContent: "retry", target: { sourceId: "file-graph", relativePath: `${method}.md` } });
+      assert.equal(retry.ok, true);
+      assert.equal(await readFile(target, "utf8"), "retry\n");
+    });
+  }
+});
+
+test("competing process reapers cannot delete an active successor lock", async () => {
+  const { root } = await graph();
+  const target = join(root, "reaper-race.md");
+  const lockPath = `${target}.action-pocket.lock`;
+  const crashed = await spawnLockOwner(lockPath);
+  crashed.kill("SIGKILL");
+  await waitForExit(crashed);
+
+  const moduleUrl = new URL("./fileGraph.js", import.meta.url).href;
+  const startPath = join(root, "reaper-race.start");
+  const runWriter = (value: string, holdWhileWriting: boolean) => new Promise<number>((resolveWriter, rejectWriter) => {
+    const script = `
+      import { constants } from "node:fs";
+      import { access, open } from "node:fs/promises";
+      import { FileGraphSource } from ${JSON.stringify(moduleUrl)};
+      const source = new FileGraphSource(${JSON.stringify(root)});
+      await source.initialize();
+      ${holdWhileWriting ? `
+        const probe = await open(${JSON.stringify(join(root, "reaper-race.probe"))}, constants.O_CREAT | constants.O_RDWR, 0o600);
+        const prototype = Object.getPrototypeOf(probe);
+        const originalWriteFile = prototype.writeFile;
+        await probe.close();
+        prototype.writeFile = async function (data, ...args) {
+          if (Buffer.isBuffer(data) && data.includes(${JSON.stringify(value)})) {
+            await new Promise((resolveWait) => setTimeout(resolveWait, 200));
+          }
+          return originalWriteFile.call(this, data, ...args);
+        };
+      ` : ""}
+      while (true) {
+        try { await access(${JSON.stringify(startPath)}); break; }
+        catch { await new Promise((resolveWait) => setTimeout(resolveWait, 5)); }
+      }
+      const receipt = await source.write({ rawContent: ${JSON.stringify(value)}, target: { sourceId: "file-graph", relativePath: "reaper-race.md" } });
+      if (!receipt.ok) throw new Error(receipt.code + ": " + receipt.message);
+      process.stdout.write(String(receipt.location.line));
+    `;
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", rejectWriter);
+    child.once("exit", (code) => code === 0 ? resolveWriter(Number(stdout)) : rejectWriter(new Error(stderr || `writer exited ${code}`)));
+  });
+
+  const writers = Array.from({ length: 8 }, (_, index) => runWriter(`reaper-${index}`, index === 0));
+  await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  await writeFile(startPath, "start");
+  const lines = await Promise.all(writers);
+  const saved = await readFile(target, "utf8");
+  assert.deepEqual([...lines].sort((left, right) => left - right), [1, 2, 3, 4, 5, 6, 7, 8]);
+  for (let index = 0; index < 8; index += 1) assert.match(saved, new RegExp(`^reaper-${index}$`, "m"));
+  await assert.rejects(stat(lockPath), { code: "ENOENT" });
+  await assert.rejects(stat(`${lockPath}.reap`), { code: "ENOENT" });
+});
+
+test("a lock left by an abnormally exited owner process is conservatively recovered", async () => {
+  const { root, source } = await graph();
+  const target = join(root, "crashed.md");
+  const child = await spawnLockOwner(`${target}.action-pocket.lock`);
+  child.kill("SIGKILL");
+  await waitForExit(child);
+
+  const receipt = await source.write({ rawContent: "after crash", target: { sourceId: "file-graph", relativePath: "crashed.md" } });
+  assert.equal(receipt.ok, true);
+  assert.equal(await readFile(target, "utf8"), "after crash\n");
+  await assert.rejects(stat(`${target}.action-pocket.lock`), { code: "ENOENT" });
+});
+
+test("a malformed unverifiable lock is preserved until an operator removes it", async () => {
+  const { root, source } = await graph();
+  const target = join(root, "malformed.md");
+  const lockPath = `${target}.action-pocket.lock`;
+  await writeFile(lockPath, "not valid lock metadata", { mode: 0o600 });
+
+  const pending = source.write({ rawContent: "after removal", target: { sourceId: "file-graph", relativePath: "malformed.md" } });
+  await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+  assert.equal(await readFile(lockPath, "utf8"), "not valid lock metadata");
+  await assert.rejects(stat(target), { code: "ENOENT" });
+
+  await unlink(lockPath);
+  const receipt = await pending;
+  assert.equal(receipt.ok, true);
+  assert.equal(await readFile(target, "utf8"), "after removal\n");
+});
+
+test("an active lock owner is never preempted", async () => {
+  const { root, source } = await graph();
+  const target = join(root, "active.md");
+  const lockPath = `${target}.action-pocket.lock`;
+  const child = await spawnLockOwner(lockPath);
+  try {
+    const pending = source.write({ rawContent: "after owner exits", target: { sourceId: "file-graph", relativePath: "active.md" } });
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+    const metadata = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number };
+    assert.equal(metadata.pid, child.pid);
+    await assert.rejects(stat(target), { code: "ENOENT" });
+
+    child.kill("SIGKILL");
+    await waitForExit(child);
+    const receipt = await pending;
+    assert.equal(receipt.ok, true);
+    assert.equal(await readFile(target, "utf8"), "after owner exits\n");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(child);
+    }
+  }
+});
+
+test("returns typed failures for traversal, absolute paths, oversized input, and symlink escape", async () => {
+  const { root, source } = await graph();
+  const outside = await mkdtemp(join(tmpdir(), "action-pocket-outside-"));
+  await symlink(outside, join(root, "escape"), "dir");
+  const input = (relativePath: string, rawContent = "safe") => ({ rawContent, target: { sourceId: "file-graph", relativePath } });
+  const traversal = await source.write(input("../outside.md"));
+  const absolute = await source.write(input("/tmp/outside.md"));
+  const symlinked = await source.write(input("escape/leak.md"));
+  const oversized = await source.write(input("big.md", "x".repeat(256 * 1024 + 1)));
+  assert.equal(traversal.ok, false);
+  assert.equal(absolute.ok, false);
+  assert.equal(symlinked.ok, false);
+  assert.equal(oversized.ok, false);
+  if (!traversal.ok) assert.equal(traversal.code, "PATH_OUTSIDE_SOURCE");
+  if (!absolute.ok) assert.equal(absolute.code, "INVALID_INPUT");
+  if (!symlinked.ok) assert.equal(symlinked.code, "PATH_OUTSIDE_SOURCE");
+  if (!oversized.ok) assert.equal(oversized.code, "PAYLOAD_TOO_LARGE");
+});
+
+test("returns an explicit IO failure instead of a success receipt", async () => {
+  const { root, source } = await graph();
+  await mkdir(join(root, "not-a-file.md"));
+  const receipt = await source.write({ rawContent: "must-not-succeed", target: { sourceId: "file-graph", relativePath: "not-a-file.md" } });
+  assert.equal(receipt.ok, false);
+  if (!receipt.ok) assert.equal(receipt.code, "IO_ERROR");
+});
+
+test("search skips unreadable child files instead of rejecting the whole project", { skip: process.platform === "win32" }, async () => {
+  const { root, source } = await graph();
+  const unreadable = join(root, "blocked.json");
+  await writeFile(unreadable, "blocked-private-marker");
+  await chmod(unreadable, 0);
+  await writeFile(join(root, "visible.md"), "visible-project-marker");
+  try {
+    const results = await source.search("visible project marker", 5);
+    assert.equal(results[0]?.location.path, "visible.md");
+  } finally {
+    await chmod(unreadable, 0o600);
+  }
+});
+
+test("search skips hidden caches, backup directory, symlinks, and files over the scan limit", async () => {
+  const { root, source } = await graph();
+  const outside = await mkdtemp(join(tmpdir(), "action-pocket-search-outside-"));
+  await mkdir(join(root, ".cache"));
+  await mkdir(join(root, "logseq", "bak"), { recursive: true });
+  await writeFile(join(root, ".cache", "secret.md"), "uniqueprivatemarker");
+  await writeFile(join(root, "logseq", "bak", "old.md"), "uniqueprivatemarker");
+  await writeFile(join(outside, "outside.md"), "outside-symlink-marker");
+  await symlink(join(outside, "outside.md"), join(root, "linked.md"), "file");
+  await writeFile(join(root, "oversized.md"), `uniqueoversizedmarker\n${"x".repeat(2 * 1024 * 1024)}`);
+  await writeFile(join(root, "visible.md"), "needle-public");
+  assert.equal((await source.search("uniqueprivatemarker", 5)).length, 0);
+  assert.equal((await source.search("outside-symlink-marker", 5)).length, 0);
+  assert.equal((await source.search("uniqueoversizedmarker", 5)).length, 0);
+  assert.equal((await source.search("needle-public", 99)).length, 1);
+});
+
+test("search enforces the 32 MiB aggregate budget before reading another candidate", async () => {
+  const { root, source } = await graph();
+  const maximumFile = 2 * 1024 * 1024;
+  for (let index = 0; index < 16; index += 1) {
+    await writeFile(join(root, `a-${String(index).padStart(2, "0")}.md`), Buffer.alloc(maximumFile, 97));
+  }
+  await writeFile(join(root, "z-after-budget.md"), "marker-after-hard-budget");
+  assert.equal((await source.search("marker-after-hard-budget", 5)).length, 0);
+});
+
+test("search versions change when the source body changes", async () => {
+  const { root, source } = await graph();
+  const path = join(root, "freshness.md");
+  await writeFile(path, "freshness marker v1");
+  const first = await source.search("freshness marker", 1);
+  await writeFile(path, "freshness marker v2");
+  const second = await source.search("freshness marker", 1);
+  assert.notEqual(first[0].location.version, second[0].location.version);
+});
+
+test("single Markdown project never exposes or writes sibling files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "action-pocket-single-"));
+  const selected = join(root, "selected.md");
+  await writeFile(selected, "selected-only-alpha-token");
+  await writeFile(join(root, "sibling.md"), "sibling-secret-omega-token");
+  const source = new FileGraphSource({ kind: "file", path: selected }, "single");
+  await source.initialize();
+  assert.equal((await source.search("selected only alpha", 5)).length, 1);
+  assert.equal((await source.search("sibling secret omega", 5)).length, 0);
+  assert.equal((await source.locate("selected.md")).absolutePath, selected);
+  await assert.rejects(source.locate("sibling.md"), /项目范围/);
+  const rejected = await source.write({ rawContent: "no", target: { sourceId: "single", relativePath: "sibling.md" } });
+  assert.equal(rejected.ok, false);
+  const written = await source.write({ rawContent: "append", target: { sourceId: "single", relativePath: "selected.md" } });
+  assert.equal(written.ok, true);
+});
+
+test("single-file scope rejects non-Markdown files and symbolic links", async () => {
+  const root = await mkdtemp(join(tmpdir(), "action-pocket-single-invalid-"));
+  const text = join(root, "plain.txt");
+  const markdown = join(root, "real.md");
+  const linked = join(root, "linked.md");
+  await writeFile(text, "text");
+  await writeFile(markdown, "markdown");
+  await symlink(markdown, linked, "file");
+  await assert.rejects(new FileGraphSource({ kind: "file", path: text }).initialize(), /\.md/);
+  await assert.rejects(new FileGraphSource({ kind: "file", path: linked }).initialize(), /符号链接/);
+});
