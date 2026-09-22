@@ -6,6 +6,8 @@
 
 下一阶段的“小窗 + 后台”、RAG 标准连接器、多模态输入与未来观察能力设计见 [`design/`](design/README.md)；Logseq 接入和问题辨识的已实现边界见 [`docs/LOGSEQ-AND-INTENT-ROUTING.md`](docs/LOGSEQ-AND-INTENT-ROUTING.md)。
 
+知识库关系、部署和验收步骤见 [`THREE-PROJECT-RELATIONSHIP-ANALYSIS.md`](THREE-PROJECT-RELATIONSHIP-ANALYSIS.md) 与 [`docs/knowledge-base-deployment/README.md`](docs/knowledge-base-deployment/README.md)。
+
 ## 本地运行
 
 需要 Node.js 20+。应用允许在未配置知识源时启动；本地 Graph 目录必须显式配置，服务不会猜测或扫描其他目录。

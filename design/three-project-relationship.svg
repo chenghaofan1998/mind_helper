@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/><stop offset="1" stop-color="#eef2ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/></marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#059669"/></marker>
+    <marker id="arrowPurple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed"/></marker>
+    <style>
+      text { font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif; fill:#0f172a; }
+      .title { font-size:38px; font-weight:700; }
+      .subtitle { font-size:20px; fill:#475569; }
+      .tag { font-size:17px; font-weight:700; letter-spacing:1px; }
+      .boxTitle { font-size:27px; font-weight:700; }
+      .role { font-size:20px; font-weight:600; }
+      .body { font-size:17px; fill:#334155; }
+      .small { font-size:15px; fill:#475569; }
+      .label { font-size:16px; font-weight:600; }
+      .white { fill:#ffffff; }
+      .footer { font-size:18px; font-weight:600; fill:#ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1050" fill="url(#bg)"/>
+  <circle cx="1480" cy="90" r="180" fill="#dbeafe" opacity="0.55"/>
+  <circle cx="120" cy="980" r="210" fill="#ede9fe" opacity="0.5"/>
+
+  <text x="70" y="72" class="title">三个项目的关系：同一条知识链，三层协作</text>
+  <text x="72" y="110" class="subtitle">不是三个平行项目，而是“加工检索 → 产物承载 → 桌面消费”的分层系统</text>
+
+  <!-- Source -->
+  <g filter="url(#shadow)">
+    <rect x="55" y="300" width="300" height="215" rx="22" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+  </g>
+  <rect x="78" y="325" width="112" height="31" rx="15" fill="#e2e8f0"/>
+  <text x="94" y="347" class="tag" fill="#475569">外部前置</text>
+  <text x="80" y="397" class="boxTitle">源 Logseq 图谱</text>
+  <text x="80" y="433" class="role" fill="#475569">原始事实来源（只读）</text>
+  <text x="80" y="470" class="body">• pages / journals / assets</text>
+  <text x="80" y="496" class="small">LOGSEQ_REPO_PATH</text>
+
+  <!-- C -->
+  <g filter="url(#shadow)">
+    <rect x="455" y="205" width="455" height="355" rx="24" fill="#ffffff" stroke="#7c3aed" stroke-width="3"/>
+  </g>
+  <rect x="480" y="232" width="80" height="32" rx="16" fill="#ede9fe"/>
+  <text x="507" y="255" class="tag" fill="#7c3aed">C</text>
+  <text x="480" y="305" class="boxTitle">AI Collab Agent Workspace</text>
+  <text x="480" y="343" class="role" fill="#6d28d9">加工与检索层</text>
+  <text x="480" y="387" class="body">• 归一化 → 切片 → 总结 → 审核 → 嵌入</text>
+  <text x="480" y="420" class="body">• keyword / semantic / hybrid 检索</text>
+  <text x="480" y="453" class="body">• Python 查询服务：127.0.0.1:8787</text>
+  <text x="480" y="486" class="body">• Connector 适配器：127.0.0.1:8788</text>
+  <rect x="480" y="511" width="395" height="30" rx="10" fill="#f5f3ff"/>
+  <text x="495" y="532" class="small">只读源图谱；只向约定目录写派生产物</text>
+
+  <!-- B -->
+  <g filter="url(#shadow)">
+    <rect x="1040" y="205" width="500" height="355" rx="24" fill="#ffffff" stroke="#059669" stroke-width="3"/>
+  </g>
+  <rect x="1065" y="232" width="80" height="32" rx="16" fill="#d1fae5"/>
+  <text x="1092" y="255" class="tag" fill="#047857">B</text>
+  <text x="1065" y="305" class="boxTitle">AI Collab Output Logseq</text>
+  <text x="1065" y="343" class="role" fill="#047857">产物承载与展示层</text>
+  <text x="1065" y="387" class="body">• 30-summaries：总结与来源快照</text>
+  <text x="1065" y="420" class="body">• 40-review：人工审核候选</text>
+  <text x="1065" y="453" class="body">• 50-knowledge：已晋升知识</text>
+  <text x="1065" y="486" class="body">• journals：允许人工/外部追加</text>
+  <rect x="1065" y="511" width="430" height="30" rx="10" fill="#ecfdf5"/>
+  <text x="1080" y="532" class="small">纯 Logseq 数据仓库，不含业务代码</text>
+
+  <!-- Runtime -->
+  <g filter="url(#shadow)">
+    <rect x="455" y="690" width="455" height="205" rx="22" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+  </g>
+  <text x="480" y="740" class="boxTitle">C Runtime</text>
+  <text x="480" y="777" class="role" fill="#475569">索引与运行状态（非 Logseq）</text>
+  <text x="480" y="817" class="body">normalized / chunks / vectors / state</text>
+  <text x="480" y="850" class="body">logs / cache / tmp</text>
+  <text x="480" y="879" class="small">PIPELINE_RUNTIME_PATH</text>
+
+  <!-- A -->
+  <g filter="url(#shadow)">
+    <rect x="1040" y="665" width="500" height="270" rx="24" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+  </g>
+  <rect x="1065" y="692" width="80" height="32" rx="16" fill="#dbeafe"/>
+  <text x="1092" y="715" class="tag" fill="#1d4ed8">A</text>
+  <text x="1065" y="765" class="boxTitle">Action Pocket</text>
+  <text x="1065" y="803" class="role" fill="#1d4ed8">桌面入口与消费层</text>
+  <text x="1065" y="845" class="body">• 快速记入、查询、定位原文</text>
+  <text x="1065" y="878" class="body">• 文件源词法检索 + Connector 语义检索</text>
+  <text x="1065" y="911" class="small">自身不成为知识库，不生成无引用答案</text>
+
+  <!-- Human client -->
+  <rect x="1190" y="125" width="205" height="52" rx="26" fill="#064e3b"/>
+  <text x="1230" y="158" class="label white">Logseq 客户端</text>
+  <line x1="1292" y1="177" x2="1292" y2="200" stroke="#059669" stroke-width="3" marker-end="url(#arrowGreen)"/>
+
+  <!-- Arrows -->
+  <line x1="355" y1="405" x2="445" y2="405" stroke="#7c3aed" stroke-width="5" marker-end="url(#arrowPurple)"/>
+  <text x="365" y="383" class="label" fill="#6d28d9">只读采集</text>
+
+  <line x1="910" y1="355" x2="1030" y2="355" stroke="#059669" stroke-width="5" marker-end="url(#arrowGreen)"/>
+  <text x="925" y="326" class="label" fill="#047857">写派生产物</text>
+  <text x="925" y="382" class="small">OUTPUT_LOGSEQ_REPO_PATH</text>
+
+  <line x1="682" y1="560" x2="682" y2="680" stroke="#64748b" stroke-width="4" marker-end="url(#arrowPurple)"/>
+  <text x="700" y="616" class="label" fill="#475569">写索引与状态</text>
+
+  <line x1="1265" y1="560" x2="1265" y2="655" stroke="#2563eb" stroke-width="5" marker-end="url(#arrowBlue)"/>
+  <text x="1285" y="598" class="label" fill="#1d4ed8">读取 / 检索 / 定位</text>
+  <text x="1285" y="624" class="small">logseq-files（零改造）</text>
+
+  <path d="M1450 665 C1515 630,1515 590,1450 560" fill="none" stroke="#059669" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <text x="1453" y="620" class="label" fill="#047857">写 journals</text>
+
+  <path d="M1040 812 C960 812,965 610,900 525" fill="none" stroke="#2563eb" stroke-width="4" stroke-dasharray="10 8" marker-end="url(#arrowBlue)"/>
+  <rect x="880" y="650" width="205" height="72" rx="14" fill="#eff6ff" stroke="#93c5fd"/>
+  <text x="900" y="678" class="label" fill="#1d4ed8">HTTP Connector</text>
+  <text x="900" y="704" class="small">A → 8788 适配 → C 8787</text>
+
+  <!-- Bottom conclusion -->
+  <rect x="55" y="963" width="1485" height="58" rx="18" fill="#0f172a"/>
+  <text x="82" y="999" class="footer">结论：B↔C 是产物契约；A↔B 是文件级集成；A↔C 是经 Connector 的检索协议集成。三者共同组成完整知识闭环。</text>
+</svg>

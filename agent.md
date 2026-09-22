@@ -23,3 +23,21 @@ git diff --check
 ```
 
 Windows 启动器、热键、托盘和发布包还需按 [`docs/P0-RELEASE-CHECKLIST.md`](docs/P0-RELEASE-CHECKLIST.md) 在真机验收。
+
+## 三项目协作上下文
+
+本仓库只承担知识链的**消费与入口**层。完整链路由三个独立项目组成：
+
+- 本仓库（Action Pocket）—— 随手记入与快速找回原文，自身不成为知识库。
+- `/mounts/ai-collab-agent-workspace` —— 知识加工与检索引擎（源笔记只读，产出可写）。
+- `/mounts/ai-collab-output-logseq` —— 可写输出图谱，供 Logseq 阅读与人工审阅。
+
+三方的定位、数据流、接口差距（含 6 个硬失败点）与集成路径见
+[`THREE-PROJECT-RELATIONSHIP-ANALYSIS.md`](THREE-PROJECT-RELATIONSHIP-ANALYSIS.md)。该文档是后续设计与实现的基线。
+
+改动前必须遵守的两条边界：
+
+1. 输出图谱的 `pages/knowledge-pipeline/{30-summaries,40-review,50-knowledge}` 由加工引擎独占写入，本仓库不得写入；本仓库只写 `journals/` 等非管线目录。
+2. 本仓库对 Connector 只声明自己真正支持的能力，并且不返回无引用的流畅回答（详见 `design/CONNECTOR-API.md`）。
+
+若三方定位、数据边界或接口契约发生变化，必须同步更新上述基线文档。
