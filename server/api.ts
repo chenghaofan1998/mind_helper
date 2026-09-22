@@ -183,6 +183,7 @@ export function createApiMiddleware(registryPromise: Promise<SourceRegistry>, se
             results,
             ...(results.requestId ? { requestId: results.requestId } : {}),
             ...(results.retrievalMode ? { retrievalMode: results.retrievalMode } : {}),
+            ...(results.warnings?.length ? { warnings: results.warnings } : {}),
           });
         } finally {
           request.off("aborted", abort);

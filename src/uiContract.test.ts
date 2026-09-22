@@ -34,7 +34,7 @@ test("primary navigation and knowledge actions use one accessible inline icon sy
   }
   assert.match(icons, /aria-hidden="true"/);
   assert.match(main, /icon\("save"\)/);
-  assert.match(main, /icon\(canLocate \? "open" : "copy"\)/);
+  assert.match(await source("src/queryView.ts"), /icon\(canLocate \? "open" : "copy"\)/);
   assert.match(css, /\.icon \{[^}]*stroke: currentColor/);
 });
 
@@ -118,11 +118,11 @@ test("long project names and write paths adapt without covering header controls"
 test("unconfigured search points at the tray settings window without a dead button", async () => {
   const main = await source("src/main.tsx");
   assert.match(main, /projects\.length === 0 \? `<div class="inline-state unconfigured">/);
-  assert.match(main, /!projects\.length && !errorMessage\) return `<div class="query-state" role="note"><span>\$\{escapeHtml\(TRAY_SETTINGS_HINT\)\}/);
+  assert.match(await source("src/queryView.ts"), /!projectCount && !errorMessage\) return `<div class="query-state" role="note"><span>\$\{escapeHtml\(TRAY_SETTINGS_HINT\)\}/);
 });
 
 test("query results render sanitized Markdown and embedded HTML", async () => {
-  const main = await source("src/main.tsx");
+  const main = await source("src/queryView.ts");
   const renderer = await source("src/richText.ts");
   const css = await source("src/styles.css");
   assert.match(main, /renderRichText\(result\.excerpt\)/);

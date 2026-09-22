@@ -15,7 +15,7 @@ import type {
   WriteReceipt,
 } from "../../src/knowledge/types.js";
 import { KnowledgeSourceError, publicError } from "../errors.js";
-import { fileIdentityMatches, isInside, isSearchableFile, OMITTED_DIRECTORIES, validateDocumentPath, validateWritePath } from "./fileGraphPaths.js";
+import { assertWritableOutsidePipeline, fileIdentityMatches, isInside, isSearchableFile, OMITTED_DIRECTORIES, validateDocumentPath, validateWritePath } from "./fileGraphPaths.js";
 import { withCrossProcessLock } from "./fileLock.js";
 
 const MAX_WRITE_BYTES = 256 * 1024;
@@ -388,6 +388,7 @@ export class FileGraphSource implements KnowledgeSource {
       if (input.target.sourceId !== this.sourceId) throw new KnowledgeSourceError("INVALID_INPUT", "目标知识源不匹配。");
       const relativePath = validateWritePath(input.target.relativePath);
       const target = resolve(this.root, ...relativePath.split("/"));
+      assertWritableOutsidePipeline(target);
       if (!isInside(this.root, target)) throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "写入位置超出知识源目录。");
       if (this.singleFile && (relativePath !== basename(this.singleFile) || target !== this.singleFile)) {
         throw new KnowledgeSourceError("PATH_OUTSIDE_SOURCE", "单文件项目只能写入所选 Markdown 文件。");

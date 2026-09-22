@@ -87,6 +87,7 @@ export async function searchKnowledge(input: SearchInput): Promise<KnowledgeSear
   const results = response.results as KnowledgeSearchResults;
   results.requestId = response.requestId;
   results.retrievalMode = response.retrievalMode;
+  results.warnings = response.warnings;
   return results;
 }
 

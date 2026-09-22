@@ -167,6 +167,7 @@ test("HTTP maps stable source failures and preserves connector search metadata",
       const results = [] as KnowledgeSearchResults;
       results.requestId = "connector-request-1";
       results.retrievalMode = "keyword";
+      results.warnings = ["检索已降级"];
       return results;
     },
   };
@@ -188,7 +189,7 @@ test("HTTP maps stable source failures and preserves connector search metadata",
       method: "POST", headers, body: JSON.stringify({ query: "ok", sourceId: "typed-source" }),
     });
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { results: [], requestId: "connector-request-1", retrievalMode: "keyword" });
+    assert.deepEqual(await response.json(), { results: [], requestId: "connector-request-1", retrievalMode: "keyword", warnings: ["检索已降级"] });
   } finally {
     await server.close();
   }

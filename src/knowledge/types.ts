@@ -41,12 +41,14 @@ export interface KnowledgeResult {
   location: SourceLocation;
   score?: number;
   retrievalMode?: RetrievalMode;
+  warnings?: string[];
 }
 
 /** Array-compatible search output with optional connector envelope metadata. */
 export interface KnowledgeSearchResults extends Array<KnowledgeResult> {
   requestId?: string;
   retrievalMode?: RetrievalMode;
+  warnings?: string[];
 }
 
 export interface SearchInput {
@@ -119,4 +121,5 @@ export interface SearchResponse {
   results: KnowledgeResult[];
   requestId?: string;
   retrievalMode?: RetrievalMode;
+  warnings?: string[];
 }

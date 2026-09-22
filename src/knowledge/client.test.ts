@@ -18,7 +18,7 @@ test("client sends the injected session token and preserves typed write failures
         return new Response(JSON.stringify({ sources: [{ id: "s", name: "Source", capabilities: ["search"], searchMode: "source", searchDescription: "source search" }] }), { status: 200 });
       }
       if (String(input).endsWith("/api/search")) {
-        return new Response(JSON.stringify({ results: [], requestId: "search-request-1", retrievalMode: "hybrid" }), { status: 200 });
+        return new Response(JSON.stringify({ results: [], requestId: "search-request-1", retrievalMode: "hybrid", warnings: ["来源过期"] }), { status: 200 });
       }
       return new Response(JSON.stringify({ ok: false, code: "PATH_OUTSIDE_SOURCE", message: "invalid target" }), { status: 400 });
     };
@@ -26,6 +26,7 @@ test("client sends the injected session token and preserves typed write failures
     const results = await searchKnowledge({ query: "x", sourceId: "s" });
     assert.equal(results.requestId, "search-request-1");
     assert.equal(results.retrievalMode, "hybrid");
+    assert.deepEqual(results.warnings, ["来源过期"]);
     const receipt = await writeKnowledge({ rawContent: "x", target: { sourceId: "s", relativePath: "../x.md" } });
     assert.deepEqual(receipt, { ok: false, code: "PATH_OUTSIDE_SOURCE", message: "invalid target" });
   } finally {

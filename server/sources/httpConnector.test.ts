@@ -11,13 +11,14 @@ type FixtureHandler = (request: RecordedRequest) => FixtureResponse | Promise<Fi
 const capabilitiesResponse = {
   requestId: "cap-1",
   source: { id: "remote", name: "Remote RAG", connectorType: "knowledge-source", defaultWriteTarget: "inbox" },
-  capabilities: ["rag", "write", "locate"],
+  capabilities: ["rag", "write", "locate", "status"],
 };
 const searchResponse = {
   requestId: "search-1",
   retrievalMode: "rag",
+  warnings: ["已降级或裁剪"],
   results: [{
-    id: "r1", kind: "decision", evidence: { excerpt: "决策：先灰度发布", contextBefore: "计划" },
+    id: "r1", kind: "decision", warnings: ["来源过期"], evidence: { excerpt: "决策：先灰度发布", contextBefore: "计划" },
     location: { sourceId: "remote", documentId: "decisions", path: "plans/decisions.md", line: 8, version: "v2" },
     retrieval: { mode: "rag", score: 0.9 },
   }],
@@ -74,7 +75,7 @@ test("HTTP connector maps capabilities, intent search, source locations, retriev
     assert.deepEqual(source.descriptor(), {
       id: "connector:remote",
       name: "Remote RAG",
-      capabilities: ["read", "search", "write", "locate"],
+      capabilities: ["read", "search", "write"],
       searchMode: "source",
       searchDescription: "标准 HTTP Connector 提供的检索",
       defaultWritePath: "inbox",
@@ -85,6 +86,7 @@ test("HTTP connector maps capabilities, intent search, source locations, retriev
     assert.equal(results.retrievalMode, "rag");
     assert.equal(results[0].retrievalMode, "rag");
     assert.equal(results[0].kind, "decision");
+    assert.deepEqual(results.warnings, ["已降级或裁剪", "来源过期"]);
     assert.equal(results[0].location.sourceId, "connector:remote");
     assert.equal(results[0].location.path, "plans/decisions.md");
     assert.equal(fixture.requests[1].body.intent, "decision");
@@ -119,6 +121,8 @@ test("HTTP connector rejects missing search envelope fields and invalid retrieva
   const searchBodies: Record<string, unknown> = {
     "missing-request": { ...searchResponse, requestId: undefined },
     "missing-mode": { ...searchResponse, retrievalMode: undefined },
+    "invalid-warnings": { ...searchResponse, warnings: "not-an-array" },
+    "invalid-result-warnings": { ...searchResponse, results: [{ ...searchResponse.results[0], warnings: [42] }] },
     "missing-result-retrieval": { ...searchResponse, results: [{ ...searchResponse.results[0], retrieval: undefined }] },
     "invalid-top-mode": { ...searchResponse, retrievalMode: "semantic" },
     "invalid-result-mode": { ...searchResponse, results: [{ ...searchResponse.results[0], retrieval: { mode: "semantic" } }] },

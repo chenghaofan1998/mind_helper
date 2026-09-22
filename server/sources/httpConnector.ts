@@ -75,8 +75,7 @@ function mappedCapabilities(values: unknown): Capability[] {
   const capabilities: Capability[] = [];
   if (declared.has("search") || declared.has("rag")) capabilities.push("read", "search");
   if (declared.has("write")) capabilities.push("write");
-  if (declared.has("locate")) capabilities.push("locate");
-  if (declared.has("status")) capabilities.push("status");
+  // Remote locations are not trusted local paths; these operations have no client implementation.
   return capabilities;
 }
 
@@ -99,6 +98,14 @@ function mappedLocation(value: unknown, sourceId: string): SourceLocation {
     uri: typeof location.uri === "string" ? location.uri : undefined,
     version: location.version,
   };
+}
+
+function mappedWarnings(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((warning) => typeof warning !== "string" || !warning.trim())) {
+    throw new KnowledgeSourceError("IO_ERROR", "Connector warnings 无效。");
+  }
+  return [...new Set(value as string[])];
 }
 
 function mappedResult(value: unknown, sourceId: string): KnowledgeResult {
@@ -127,6 +134,7 @@ function mappedResult(value: unknown, sourceId: string): KnowledgeResult {
     location,
     score: retrieval.score as number | undefined,
     retrievalMode: mode,
+    warnings: mappedWarnings(result.warnings),
   };
 }
 
@@ -228,6 +236,10 @@ export class HttpConnectorSource implements KnowledgeSource {
     const results = payload.results.slice(0, limit).map((result) => mappedResult(result, this.descriptor().id)) as KnowledgeSearchResults;
     results.requestId = responseRequestId;
     results.retrievalMode = responseRetrievalMode;
+    results.warnings = [...new Set([
+      ...(mappedWarnings(payload.warnings) ?? []),
+      ...results.flatMap((result) => result.warnings ?? []),
+    ])];
     return results;
   }
 

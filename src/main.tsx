@@ -8,10 +8,10 @@ import { icon } from "./icons";
 import { applyExplicitMode, localRoute } from "./knowledge/intentRouter";
 import { projectSwitcherModel, TRAY_SETTINGS_HINT } from "./layout";
 import { listProjects, listSources, locateKnowledge, searchKnowledge, writeKnowledge } from "./knowledge/client";
-import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, SearchIntent, SourceDescriptor, SourceLocation, WriteReceipt } from "./knowledge/types";
+import type { KnowledgeResult, KnowledgeSearchResults, ProjectDescriptor, SearchIntent, SourceDescriptor, WriteReceipt } from "./knowledge/types";
 import { nextResultIndex, resultKeyboardAction } from "./resultNavigation";
-import { renderRichText } from "./richText";
-import { commandForClipboard, isDangerous, riskImpact } from "./search";
+import { escapeHtml, locationLabel, sourceVersion, renderQueryState, renderRiskModal } from "./queryView";
+import { commandForClipboard, isDangerous } from "./search";
 import { canSubmitWrite, effectiveWritePath } from "./writeTarget";
 import { ManualWindowDrag, shouldBeginWindowDrag } from "./windowDrag";
 
@@ -59,10 +59,6 @@ const manualWindowDrag = new ManualWindowDrag(
   (error) => showToast(`窗口移动失败：${error instanceof Error ? error.message : String(error)}`),
 );
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
-}
-
 function activeProject(): ProjectDescriptor | undefined {
   return projects.find((project) => project.id === projectId);
 }
@@ -74,19 +70,6 @@ function activeSource(): SourceDescriptor | undefined {
 
 function effectiveTargetPath(): string {
   return effectiveWritePath(relativePath, activeSource());
-}
-
-function locationLabel(location: SourceLocation): string {
-  const anchor = location.line ? `第 ${location.line} 行` : location.blockId ? `块 ${location.blockId}` : "位置未提供";
-  return `${location.path} · ${anchor}`;
-}
-
-function sourceVersion(location: SourceLocation): string {
-  return location.version ? `来源版本 ${location.version}` : "来源未提供版本";
-}
-
-function sourceForResult(result: KnowledgeResult): SourceDescriptor | undefined {
-  return sources.find((source) => source.id === result.location.sourceId);
 }
 
 function renderTabs(): string {
@@ -153,46 +136,6 @@ function renderRecordActions(): string {
   return `<button id="record-submit" class="primary" type="submit" form="record-form" ${busy || !canWrite ? "disabled" : ""}>${icon("save")}<span>${busy ? "正在保存…" : errorMessage ? "重试保存" : "保存到知识库"}</span><kbd>Ctrl+Enter</kbd></button>`;
 }
 
-function renderExcerpt(result: KnowledgeResult): string {
-  if (result.kind === "command") return `<pre class="command-block"><code>${escapeHtml(commandForClipboard(result.excerpt))}</code></pre>`;
-  return `<div class="evidence-text markdown-body">${renderRichText(result.excerpt)}</div>`;
-}
-
-function resultKindLabel(result: KnowledgeResult): string {
-  if (result.kind === "command") return "命令";
-  if (result.kind === "task") return "待办";
-  if (result.kind === "understanding") return "概念";
-  if (result.kind === "decision") return "决策";
-  return "原文";
-}
-
-function renderResult(result: KnowledgeResult, index: number): string {
-  const canLocate = sourceForResult(result)?.capabilities.includes("locate") ?? false;
-  const dangerous = result.kind === "command" && isDangerous(commandForClipboard(result.excerpt));
-  const selected = index === selectedResultIndex;
-  return `<article class="result-card ${selected ? "selected" : ""}" data-result-index="${index}" data-id="${escapeHtml(result.id)}" data-risk-return="result-card" tabindex="${selected ? "0" : "-1"}" ${selected ? 'aria-current="true"' : ""}>
-    <header class="result-heading"><div><span class="evidence-label">${icon("file")}<span>知识库原文</span></span><h2>${escapeHtml(result.title)}</h2></div><span class="result-kind">${resultKindLabel(result)}</span></header>
-    ${renderExcerpt(result)}
-    ${result.contextBefore || result.contextAfter ? `<details class="context-details"><summary>展开必要上下文</summary>${result.contextBefore ? `<div><b>前文</b><section class="markdown-body">${renderRichText(result.contextBefore)}</section></div>` : ""}${result.contextAfter ? `<div><b>后文</b><section class="markdown-body">${renderRichText(result.contextAfter)}</section></div>` : ""}</details>` : ""}
-    <p class="source-line">${escapeHtml(locationLabel(result.location))}<br><span>${escapeHtml(sourceVersion(result.location))}</span></p>
-    ${dangerous ? `<p class="risk-note">${escapeHtml(riskImpact(commandForClipboard(result.excerpt)))}</p>` : ""}
-    <footer class="result-actions">
-      <button class="primary" data-action="copy" data-id="${escapeHtml(result.id)}" data-risk-return="copy-button">${icon("copy")}<span>${result.kind === "command" ? "复制命令" : "复制原文"}${dangerous ? " · 需确认" : ""}</span></button>
-      <button data-action="${canLocate ? "locate" : "copy-location"}" data-id="${escapeHtml(result.id)}">${icon(canLocate ? "open" : "copy")}<span>${canLocate ? "打开原文" : "复制定位"}</span></button>
-    </footer>
-  </article>`;
-}
-
-function renderQueryState(): string {
-  if (loading) return `<div class="query-state" role="status"><b>正在连接知识源…</b><span>连接完成前不会发送问题。</span></div>`;
-  if (!projects.length && !errorMessage) return `<div class="query-state" role="note"><span>${escapeHtml(TRAY_SETTINGS_HINT)}</span></div>`;
-  if (errorMessage) return `<div class="query-state error" role="alert"><b>项目访问失败</b><span>${escapeHtml(errorMessage)} 问题已保留。</span></div>`;
-  if (busy) return `<div class="query-state" role="status"><b>正在查询知识源…</b><span>问题会保留到查询完成。</span></div>`;
-  if (results.length) return `<div class="results" aria-label="查询结果">${results.map(renderResult).join("")}</div>`;
-  if (hasSearched) return `<div class="query-state"><b>未找到相关原文</b><span>可修改问题后重试，或按知识源定位自行查找。</span></div>`;
-  return `<div class="query-spacer" aria-hidden="true"></div>`;
-}
-
 function renderQueryInput(): string {
   return `<form id="query-form" class="intent-form query-form" autocomplete="off">
     <label for="query-input">现在遇到什么问题？</label>
@@ -205,22 +148,6 @@ function renderQueryActions(): string {
   return `<button id="query-submit" class="primary" type="submit" form="query-form" ${loading || busy || !canSearch || !query.trim() ? "disabled" : ""}>${icon("search")}<span>${busy ? "查询中…" : errorMessage ? "重试查询" : "查询"}</span><kbd>Enter</kbd></button>`;
 }
 
-function renderRiskModal(): string {
-  const result = results.find((item) => item.id === riskResultId);
-  if (!result) return "";
-  const command = commandForClipboard(result.excerpt);
-  return `<div class="modal-backdrop"><section class="risk-modal" role="alertdialog" aria-modal="true" aria-labelledby="risk-title">
-    <header><span class="risk-mark">!</span><h2 id="risk-title">复制前确认</h2></header>
-    <p>你即将复制以下命令：</p><pre><code>${escapeHtml(command)}</code></pre>
-    <p class="modal-source">${escapeHtml(locationLabel(result.location))} · ${escapeHtml(sourceVersion(result.location))}</p>
-    <p class="modal-warning"><b>!</b>${escapeHtml(riskImpact(command))}</p>
-    ${clipboardError ? `<p class="modal-error" role="alert"><b>!</b>复制失败：${escapeHtml(clipboardError)}</p>` : ""}
-    <p>Action Pocket 只会复制，不会执行。</p>
-    <footer><button data-action="close-risk" data-risk-initial-focus>取消</button><button class="primary" data-action="confirm-copy" data-id="${escapeHtml(result.id)}">${clipboardError ? "重试复制" : "仍然复制"}</button></footer>
-    <small>Esc 取消 · Tab / Shift+Tab 切换焦点</small>
-  </section></div>`;
-}
-
 function render(): void {
   root.innerHTML = `<main class="pocket">
     <header class="app-header"><span class="app-mark"><img src="./action-pocket.png" alt=""></span><span class="product-name">Action Pocket</span><span class="header-spacer"></span>${renderProjectSwitcher()}${isDesktopRuntime() ? `<button class="pin-button ${windowPinned ? "active" : ""}" data-action="toggle-window-pin" aria-pressed="${windowPinned}" title="${windowPinned ? "取消窗口置顶" : "窗口置顶"}"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3v1H5v-1l3-3-1-5Zm3 9v5"/></svg></button>` : ""}</header>
@@ -229,10 +156,10 @@ function render(): void {
       ${mode === "record" ? renderRecordInput() : renderQueryInput()}
     </div>
     <section class="shell-body">
-      ${mode === "record" ? renderRecordBody() : renderQueryState()}
+      ${mode === "record" ? renderRecordBody() : renderQueryState({ loading, projectCount: projects.length, errorMessage, busy, results, hasSearched, sources, selectedResultIndex })}
     </section>
     <div class="panel-actions">${mode === "record" ? renderRecordActions() : renderQueryActions()}</div>
-    <div class="toast-region" aria-live="polite"></div>${renderRiskModal()}
+    <div class="toast-region" aria-live="polite"></div>${renderRiskModal(results, riskResultId, clipboardError)}
   </main>`;
 }
 

@@ -48,6 +48,14 @@ export function validateWritePath(value: string): string {
   return path;
 }
 
+export function assertWritableOutsidePipeline(absolutePath: string): void {
+  const parts = absolutePath.replaceAll("\\", "/").toLowerCase().split("/");
+  const protectedEntries = new Set(["30-summaries", "40-review", "50-knowledge", "ai knowledge index.md"]);
+  if (parts.some((part, index) => part === "knowledge-pipeline" && protectedEntries.has(parts[index + 1]))) {
+    throw new KnowledgeSourceError("FORBIDDEN", "知识管线产物由加工引擎管理，请写入 journals 等非管线目录。");
+  }
+}
+
 export function validateDocumentPath(value: string): string {
   const path = validateSafeRelativePath(value);
   if (!isSearchableFile(path)) throw new KnowledgeSourceError("INVALID_INPUT", "原文不是受支持的文本文件。");
